@@ -174,8 +174,12 @@ class EnergiedatenSensor(
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Process new data when coordinator updates."""
-        super()._handle_coordinator_update()
+        """Process new data when coordinator updates.
+
+        Intentionally skip super() to avoid async_write_ha_state() which
+        would record a state entry at 'now' — this sensor only writes to
+        long-term statistics via async_write_historical().
+        """
         if self.coordinator.data:
             self.hass.async_create_task(self._async_process_readings())
 
