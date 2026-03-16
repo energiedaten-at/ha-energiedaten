@@ -118,6 +118,12 @@ class EnergiedatenSensor(
 
         return result
 
+    async def async_added_to_hass(self) -> None:
+        """Process initial data when entity is added to HA."""
+        await super().async_added_to_hass()
+        if self.coordinator.data:
+            await self._async_process_readings()
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Process new data when coordinator updates."""
