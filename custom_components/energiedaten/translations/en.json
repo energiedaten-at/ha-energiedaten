@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to energiedaten.at",
+        "data": {
+          "token": "API Token",
+          "team_slug": "Team Slug"
+        },
+        "data_description": {
+          "token": "Create a token at energiedaten.at → Settings → API Tokens (scopes: meters:read, data:read)",
+          "team_slug": "Your team identifier, visible in the energiedaten.at URL"
+        }
+      },
+      "meters": {
+        "title": "Select Meters",
+        "data": {
+          "meters": "Meters to import"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "data": {
+          "token": "API Token"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid API token",
+      "team_not_found": "Team not found",
+      "cannot_connect": "Cannot connect to energiedaten.at"
+    },
+    "abort": {
+      "reauth_successful": "Re-authentication successful"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit energiedaten.at verbinden",
+        "data": {
+          "token": "API-Token",
+          "team_slug": "Team-Slug"
+        },
+        "data_description": {
+          "token": "Token erstellen unter energiedaten.at → Einstellungen → API-Tokens (Berechtigungen: meters:read, data:read)",
+          "team_slug": "Deine Team-Kennung, sichtbar in der energiedaten.at-URL"
+        }
+      },
+      "meters": {
+        "title": "Zähler auswählen",
+        "data": {
+          "meters": "Zu importierende Zähler"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut authentifizieren",
+        "data": {
+          "token": "API-Token"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ungültiges API-Token",
+      "team_not_found": "Team nicht gefunden",
+      "cannot_connect": "Verbindung zu energiedaten.at nicht möglich"
+    },
+    "abort": {
+      "reauth_successful": "Erneute Authentifizierung erfolgreich"
+    }
+  }
+}

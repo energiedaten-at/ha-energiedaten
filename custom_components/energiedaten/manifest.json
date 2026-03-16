@@ -3,6 +3,7 @@
   "name": "energiedaten.at",
   "codeowners": ["@energiedaten"],
   "config_flow": true,
+  "dependencies": ["recorder"],
   "documentation": "https://github.com/energiedaten/ha-energiedaten",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
