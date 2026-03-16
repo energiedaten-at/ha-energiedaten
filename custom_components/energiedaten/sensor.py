@@ -70,7 +70,7 @@ class EnergiedatenSensor(
         label = meter.get("label") or meter["metering_point"][-6:]
         direction_label = "Consumption" if direction == "consumption" else "Feed-in"
 
-        self._attr_name = f"{label} {direction_label}"
+        self._attr_name = direction_label
         self._attr_unique_id = f"{entry.entry_id}_{self._meter_uuid}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._meter_uuid)},

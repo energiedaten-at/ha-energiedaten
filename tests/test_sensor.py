@@ -54,8 +54,7 @@ def test_sensor_attributes(mock_coordinator, mock_entry, meter_config):
 
     assert sensor.device_class == SensorDeviceClass.ENERGY
     assert sensor.native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR
-    assert "Wohnung" in sensor.name
-    assert "Consumption" in sensor.name
+    assert sensor.name == "Consumption"
     assert sensor.unique_id == "test-entry-id_meter-1"
 
 
@@ -94,11 +93,11 @@ def test_sensor_feed_in_naming(mock_coordinator, mock_entry):
         "label": "PV Anlage",
     }
     sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter)
-    assert "Feed-in" in sensor.name
+    assert sensor.name == "Feed-in"
 
 
-def test_sensor_no_label_uses_zaehlpunkt_suffix(mock_coordinator, mock_entry):
-    """Meter without label should use last 6 chars of Zählpunkt."""
+def test_sensor_no_label_device_uses_zaehlpunkt_suffix(mock_coordinator, mock_entry):
+    """Meter without label should use last 6 chars of Zählpunkt for device name."""
     meter = {
         "uuid": "meter-3",
         "metering_point": "AT0030000000000000000000000054321",
@@ -106,7 +105,7 @@ def test_sensor_no_label_uses_zaehlpunkt_suffix(mock_coordinator, mock_entry):
         "label": None,
     }
     sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter)
-    assert "054321" in sensor.name
+    assert sensor.device_info["name"] == "054321"
 
 
 def test_get_statistic_metadata_has_sum(mock_coordinator, mock_entry, meter_config):
