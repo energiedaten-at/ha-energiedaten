@@ -1,0 +1,101 @@
+name: Bug Report
+description: Report a problem with the energiedaten.at integration
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+      placeholder: "e.g., Data stopped appearing in the Energy Dashboard after updating to v0.2.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      placeholder: |
+        1. Install integration via HACS
+        2. Configure with API token and team slug
+        3. Wait for data to appear
+        4. ...
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Version
+      description: "Settings → About"
+      placeholder: "2025.12.0"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration Version
+      description: "HACS → energiedaten.at → version shown"
+      placeholder: "0.2.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation_method
+    attributes:
+      label: Installation Method
+      options:
+        - HACS
+        - Manual
+    validations:
+      required: true
+
+  - type: dropdown
+    id: plan
+    attributes:
+      label: energiedaten.at Plan
+      description: Which plan are you on?
+      options:
+        - Community (free)
+        - Starter
+        - Growing
+        - Business
+        - "I don't know"
+    validations:
+      required: true
+
+  - type: input
+    id: meters
+    attributes:
+      label: Number of Meters
+      description: How many meters are configured in the integration?
+      placeholder: "1"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: |
+        Paste any relevant logs from **Settings → System → Logs** (filter for `custom_components.energiedaten`).
+        This will be automatically formatted as code.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Anything else that might help — screenshots, HA environment details, etc.
+    validations:
+      required: false
