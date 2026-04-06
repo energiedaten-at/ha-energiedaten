@@ -157,7 +157,7 @@ async def test_first_sync_writes_statistics(coordinator, mock_client):
     meta = mock_add_stats.call_args_list[0][0][1]  # second positional arg
     assert meta["has_sum"] is True
     assert meta["source"] == "energiedaten"
-    assert "AT0030000000000000000000000054321" in meta["statistic_id"]
+    assert "at0030000000000000000000000054321" in meta["statistic_id"]
 
 
 async def test_normal_sync_anchors_sum_from_recorder(hass, mock_client):
@@ -195,7 +195,7 @@ async def test_normal_sync_anchors_sum_from_recorder(hass, mock_client):
 
     # Mock get_last_statistics to return an existing sum of 100.0
     mock_last_stats = {
-        "energiedaten:AT0030000000000000000000000054321_measured": [
+        "energiedaten:at0030000000000000000000000054321_measured": [
             {"start": 1742050800.0, "sum": 100.0}
         ]
     }
@@ -309,7 +309,7 @@ async def test_correction_triggers_day_refetch(hass, mock_client):
 
     # Mock recorder: latest stat is at hour 14 → correction detected
     mock_last_stats = {
-        "energiedaten:AT0030000000000000000000000054321_measured": [
+        "energiedaten:at0030000000000000000000000054321_measured": [
             {"start": 1773586800.0, "sum": 50.0}  # 2026-03-15T15:00:00 UTC
         ]
     }

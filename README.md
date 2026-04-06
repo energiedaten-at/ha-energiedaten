@@ -6,7 +6,7 @@
 
 <p align="center">
   Austrian smart meter data in your Energy Dashboard.<br>
-  Powered by <a href="https://energiedaten.at">energiedaten.at</a> — Smart Meter Daten. Einfach nutzbar.
+  Powered by <a href="https://energiedaten.at">energiedaten.at</a> · Smart Meter Daten. Einfach nutzbar.
 </p>
 
 <p align="center">
@@ -18,30 +18,31 @@
 
 ---
 
-> **Beta** — This integration is under active development. It works, but expect rough edges. We welcome [bug reports](https://github.com/energiedaten-at/ha-energiedaten/issues/new?template=bug_report.yml) and [contributions](CONTRIBUTING.md).
+> **Beta**: this integration is under active development. It works, but expect rough edges. We welcome [bug reports](https://github.com/energiedaten-at/ha-energiedaten/issues/new?template=bug_report.yml) and [contributions](CONTRIBUTING.md).
 
 ## What It Does
 
-This integration imports your Austrian smart meter energy data from [energiedaten.at](https://energiedaten.at) into Home Assistant's Energy Dashboard. No scraping, no manual CSV uploads — just quarter-hourly consumption and feed-in data, delivered automatically.
+This integration imports your Austrian smart meter energy data from [energiedaten.at](https://energiedaten.at) into Home Assistant's Energy Dashboard. No scraping, no manual CSV uploads, just quarter-hourly consumption and feed-in data delivered automatically.
 
-[energiedaten.at](https://energiedaten.at) handles the complexity of Austria's energy data infrastructure (EDA network) so you don't have to. You register your meter, give consent, and receive data. This integration brings that data into Home Assistant.
+[energiedaten.at](https://energiedaten.at) handles the complexity of Austria's energy data infrastructure (EDA network) so you don't have to. Register your meter, give consent, and receive data. This integration brings that data into Home Assistant.
 
 ## Features
 
-- **Quarter-hourly energy data** — consumption and feed-in (Einspeisung) per meter
-- **Energy Dashboard ready** — cumulative kWh statistics appear directly in HA's energy panel
-- **Automatic polling** — fetches new data every 6 hours
-- **Manual refresh** — button entity to trigger an immediate update
-- **Multi-meter support** — select which meters to import during setup
-- **Incremental import** — only fetches new data since the last successful sync
-- **Reauth support** — prompts to update expired API tokens
+- **Quarter-hourly energy data** for consumption and feed-in (Einspeisung) per meter
+- **Energy Dashboard ready**: cumulative kWh statistics appear directly in HA's energy panel
+- **Automatic polling** every 6 hours with incremental sync
+- **Manual refresh** button to trigger an immediate update
+- **Re-import service** to re-fetch all historical data on demand (Developer Tools → Services)
+- **Correction detection**: when the grid operator re-sends corrected readings, affected days are automatically re-fetched
+- **Multi-meter support**: select which meters to import during setup
+- **Reauth support** for expired API tokens
 
 ## Requirements
 
 | Requirement | Details |
 |---|---|
 | Home Assistant | **2025.12.0** or newer |
-| energiedaten.at account | [Sign up free](https://energiedaten.at) — 1 meter included on the Community plan |
+| energiedaten.at account | [Sign up free](https://energiedaten.at), 1 meter included on the Community plan |
 | API token | With `meters:read` and `data:read` scopes ([create one here](https://energiedaten.at/settings/api-tokens)) |
 
 ## Installation
@@ -77,14 +78,16 @@ After installation, add your sensors to the Energy Dashboard:
 
 ### Sensors
 
-One sensor per selected meter:
+One sensor per selected meter and OBIS code:
 
 | Direction | Name Pattern | Example |
 |---|---|---|
 | Consumption | `{label} Consumption` | Wohnung Consumption |
 | Feed-in | `{label} Feed-in` | PV Anlage Feed-in |
 
-Each sensor exposes these attributes:
+Each sensor's state shows the latest quarter-hour reading in kWh. Additionally, cumulative long-term statistics are written for the Energy Dashboard.
+
+Sensor attributes:
 
 | Attribute | Description |
 |---|---|
@@ -96,13 +99,17 @@ Each sensor exposes these attributes:
 
 ### Button
 
-- **Refresh** — manually triggers a data fetch from energiedaten.at
+- **Refresh**: manually triggers a data fetch from energiedaten.at
+
+### Services
+
+- **`energiedaten.reimport`**: clears sync watermarks and re-fetches all historical meter data. Existing statistics are overwritten, not duplicated. Call it from **Developer Tools → Services**.
 
 ## How It Works
 
-energiedaten.at delivers smart meter data in batches (typically once daily) via Austria's regulated EDA network. This integration polls the energiedaten.at API every 6 hours, converts the quarter-hourly kWh readings into cumulative statistics, and writes them to Home Assistant's long-term statistics database via [ha-historical-sensor](https://github.com/ldotlopez/ha-historical-sensor).
+energiedaten.at delivers smart meter data in batches (typically once daily) via Austria's regulated EDA network. This integration polls the energiedaten.at API every 6 hours, converts the quarter-hourly kWh readings into cumulative statistics, and writes them to Home Assistant's long-term statistics database using `async_add_external_statistics()`.
 
-Data appears in the **Energy Dashboard**, not as real-time entity states. This is by design — EDA data is historical, not live.
+Statistics use external statistic IDs in the format `energiedaten:{metering_point}_{obis_name}` and appear in the **Energy Dashboard**. EDA data is historical, not live, so there is a natural delay of up to 24 hours.
 
 ## API Rate Limits
 
@@ -121,12 +128,19 @@ If rate-limited, the integration logs a warning and retries on the next polling 
 - Verify your meters show status "connected" in energiedaten.at
 - Check logs: **Settings → System → Logs**, filter for `custom_components.energiedaten`
 
+**Upgraded from 0.2.x?**
+- v0.3.0 changed statistic IDs from entity-based to external format. After upgrading, go to **Settings → Dashboards → Energy** and re-select your statistics.
+- The first sync after upgrade automatically re-fetches all available history.
+
+**Want to re-import all data?**
+- Use the `energiedaten.reimport` service in **Developer Tools → Services**. This clears watermarks and triggers a full re-fetch.
+
 **Re-authentication required?**
-- Your API token may have expired — create a new one at [energiedaten.at → Settings → API Tokens](https://energiedaten.at/settings/api-tokens)
+- Your API token may have expired. Create a new one at [energiedaten.at → Settings → API Tokens](https://energiedaten.at/settings/api-tokens).
 
 **Something else?**
 - [Open a bug report](https://github.com/energiedaten-at/ha-energiedaten/issues/new?template=bug_report.yml)
-- Check [existing issues](https://github.com/energiedaten-at/ha-energiedaten/issues) — someone may have hit the same problem
+- Check [existing issues](https://github.com/energiedaten-at/ha-energiedaten/issues) for similar problems
 
 ## Contributing
 
@@ -138,7 +152,7 @@ This is an open-source project and we welcome contributions. See [CONTRIBUTING.m
 
 ## About energiedaten.at
 
-[energiedaten.at](https://energiedaten.at) is Austria's developer-friendly smart meter data platform. We handle the complexity of the EDA network — consent management, data retrieval, format conversion — so you can focus on what you build with the data.
+[energiedaten.at](https://energiedaten.at) is Austria's developer-friendly smart meter data platform. We handle the complexity of the EDA network (consent management, data retrieval, format conversion) so you can focus on what you build with the data.
 
 - **Website:** [energiedaten.at](https://energiedaten.at)
 - **Questions about the platform:** [phillip.fickl@energiedaten.at](mailto:phillip.fickl@energiedaten.at)

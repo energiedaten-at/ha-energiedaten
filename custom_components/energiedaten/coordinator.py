@@ -86,11 +86,12 @@ def _build_hourly_statistics(
 
 def _statistic_id(metering_point: str, obis_code: str | None) -> str:
     """Build external statistic ID from metering point and OBIS code."""
+    mp = metering_point.lower()
     if obis_code:
         suffix = _obis_suffix(obis_code)
         name = _OBIS_STAT_NAMES.get(suffix, suffix.lower().replace(".", "_"))
-        return f"{DOMAIN}:{metering_point}_{name}"
-    return f"{DOMAIN}:{metering_point}"
+        return f"{DOMAIN}:{mp}_{name}"
+    return f"{DOMAIN}:{mp}"
 
 
 class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any]]]]):
