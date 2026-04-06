@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 from typing import Any
@@ -25,6 +26,14 @@ class MeterNotFoundError(Exception):
 
 class RateLimitError(Exception):
     """Raised on 429 responses."""
+
+
+@dataclass
+class MeterDataResult:
+    """Result of a meter data fetch including delta-sync watermark."""
+
+    readings: list[dict[str, Any]] = field(default_factory=list)
+    max_updated_at: str | None = None
 
 
 class EnergiedatenApiClient:
@@ -81,8 +90,14 @@ class EnergiedatenApiClient:
         meter_uuid: str,
         from_dt: datetime,
         to_dt: datetime,
-    ) -> list[dict[str, Any]]:
-        """Get meter readings, handling cursor pagination internally."""
+        updated_since: str | None = None,
+    ) -> MeterDataResult:
+        """Get meter readings, handling cursor pagination internally.
+
+        When *updated_since* is provided, only records modified after that
+        timestamp are returned (delta sync).  The caller should persist
+        ``max_updated_at`` from the result as the next watermark.
+        """
         readings: list[dict[str, Any]] = []
         params: dict[str, Any] = {
             "from": from_dt.isoformat(),
@@ -90,14 +105,18 @@ class EnergiedatenApiClient:
             "limit": 10000,
             "order": "asc",
         }
+        if updated_since is not None:
+            params["updated_since"] = updated_since
 
+        max_updated_at: str | None = None
         while True:
             data = await self._get(f"/meters/{meter_uuid}/data", params=params)
             readings.extend(data["data"])
+            max_updated_at = data.get("meta", {}).get("max_updated_at", max_updated_at)
 
             next_cursor = data.get("meta", {}).get("next_cursor")
             if not next_cursor:
                 break
             params["cursor"] = next_cursor
 
-        return readings
+        return MeterDataResult(readings=readings, max_updated_at=max_updated_at)
