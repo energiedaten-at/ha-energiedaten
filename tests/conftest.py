@@ -19,14 +19,12 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 @pytest.fixture
 def mock_recorder_before_hass():
-    """Mock the recorder component so the recorder dependency is satisfied in tests.
+    """Mock the recorder component so the recorder dependency is satisfied.
 
-    The energiedaten integration declares recorder as a dependency so that
-    homeassistant-historical-sensor can write long-term statistics.  The real
-    recorder requires a live database connection, which is unavailable in the
-    unit-test environment.  We patch its async_setup to merely initialise the
-    recorder data-structures (so hass.data[DATA_RECORDER] exists) and return
-    True — enough to satisfy HA's dependency check without spinning up SQLite.
+    The integration declares recorder as a dependency for writing external
+    statistics.  The real recorder requires a live database, which is
+    unavailable in the unit-test environment.  We patch async_setup to
+    initialise the recorder data structures and return True.
     """
 
     async def _mock_recorder_setup(hass, config):
