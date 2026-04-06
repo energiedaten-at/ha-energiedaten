@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `energiedaten.reimport` service call to re-fetch all historical data on demand
+  (Developer Tools → Services). Clears sync watermarks and triggers a full
+  re-import; existing statistics are overwritten, not duplicated.
 - Automatic config entry migration (v1 → v2) clears watermarks on upgrade so
   the first sync re-fetches all available history — no manual removal needed.
 - Correction detection: when the grid operator re-sends corrected readings

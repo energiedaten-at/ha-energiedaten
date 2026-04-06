@@ -33,5 +33,11 @@
     "abort": {
       "reauth_successful": "Re-authentication successful"
     }
+  },
+  "services": {
+    "reimport": {
+      "name": "Re-import data",
+      "description": "Clear sync watermarks and re-fetch all historical meter data from energiedaten.at. Existing statistics are overwritten, not duplicated."
+    }
   }
 }

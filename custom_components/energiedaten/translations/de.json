@@ -33,5 +33,11 @@
     "abort": {
       "reauth_successful": "Erneute Authentifizierung erfolgreich"
     }
+  },
+  "services": {
+    "reimport": {
+      "name": "Daten neu importieren",
+      "description": "Synchronisierungs-Wasserzeichen löschen und alle historischen Zählerdaten von energiedaten.at neu abrufen. Bestehende Statistiken werden überschrieben, nicht dupliziert."
+    }
   }
 }
