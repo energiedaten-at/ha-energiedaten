@@ -1,19 +1,13 @@
-"""Tests for energiedaten.at historical sensors."""
+"""Tests for energiedaten.at energy sensors."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant
-
-from homeassistant_historical_sensor import HistoricalSensor
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energiedaten.const import DOMAIN
 from custom_components.energiedaten.sensor import EnergiedatenSensor
@@ -25,7 +19,6 @@ def mock_coordinator():
     coord = MagicMock()
     coord.data = {"meter-1": []}
     coord.async_add_listener = MagicMock(return_value=MagicMock())
-    coord.async_request_refresh = AsyncMock()
     return coord
 
 
@@ -59,7 +52,7 @@ def test_sensor_attributes(mock_coordinator, mock_entry, meter_config):
 
 
 def test_sensor_no_state_class(mock_coordinator, mock_entry, meter_config):
-    """Sensor must NOT set state_class — ha-historical-sensor manages statistics."""
+    """Sensor must NOT set state_class — statistics are external."""
     sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
     assert not hasattr(sensor, "_attr_state_class") or sensor._attr_state_class is None
 
@@ -108,78 +101,6 @@ def test_sensor_no_label_device_uses_zaehlpunkt_suffix(mock_coordinator, mock_en
     assert sensor.device_info["name"] == "054321"
 
 
-def test_get_statistic_metadata_has_sum(mock_coordinator, mock_entry, meter_config):
-    """Statistic metadata must have has_sum=True for energy dashboard."""
-    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
-
-    with patch.object(
-        HistoricalSensor,
-        "get_statistic_metadata",
-        return_value={"has_sum": False},
-    ):
-        meta = sensor.get_statistic_metadata()
-    assert meta["has_sum"] is True
-
-
-async def test_process_readings_updates_extra_attributes(
-    mock_coordinator, mock_entry, meter_config
-):
-    """After processing readings, data_quality and last_data_at should be set."""
-    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
-    sensor.hass = MagicMock()
-
-    mock_coordinator.data = {
-        "meter-1": [
-            {
-                "timestamp": "2026-03-15T14:00:00+00:00",
-                "timestamp_end": "2026-03-15T14:15:00+00:00",
-                "value": 0.3,
-                "quality": "measured",
-            },
-        ]
-    }
-    mock_coordinator.update_last_fetched = MagicMock()
-
-    with patch.object(sensor, "async_write_historical", new_callable=AsyncMock):
-        await sensor._async_process_readings()
-
-    assert sensor.extra_state_attributes["data_quality"] == "measured"
-    assert sensor.extra_state_attributes["last_data_at"] == "2026-03-15T14:15:00+00:00"
-    mock_coordinator.update_last_fetched.assert_called_once_with(
-        "meter-1", "2026-03-15T14:15:00+00:00"
-    )
-
-
-async def test_process_readings_does_not_persist_on_write_failure(
-    mock_coordinator, mock_entry, meter_config
-):
-    """If async_write_historical fails, last_fetched must NOT be updated."""
-    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
-    sensor.hass = MagicMock()
-
-    mock_coordinator.data = {
-        "meter-1": [
-            {
-                "timestamp": "2026-03-15T14:00:00+00:00",
-                "timestamp_end": "2026-03-15T14:15:00+00:00",
-                "value": 0.3,
-                "quality": "measured",
-            },
-        ]
-    }
-    mock_coordinator.update_last_fetched = MagicMock()
-
-    with patch.object(
-        sensor,
-        "async_write_historical",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("Recorder unavailable"),
-    ):
-        await sensor._async_process_readings()
-
-    mock_coordinator.update_last_fetched.assert_not_called()
-
-
 def test_sensor_with_obis_code_naming(mock_coordinator, mock_entry, meter_config):
     """Sensor with OBIS code should include OBIS label in name."""
     sensor = EnergiedatenSensor(
@@ -204,38 +125,64 @@ def test_sensor_with_obis_code_grid(mock_coordinator, mock_entry):
     assert sensor.name == "Feed-in Grid"
 
 
-async def test_process_readings_filters_by_obis_code(
-    mock_coordinator, mock_entry, meter_config
-):
-    """Sensor with OBIS code should only process readings with matching code."""
-    sensor = EnergiedatenSensor(
-        mock_coordinator, mock_entry, meter_config, "1-1:1.9.0 G.01"
-    )
-    sensor.hass = MagicMock()
+def test_native_value_returns_latest_reading(mock_coordinator, mock_entry, meter_config):
+    """native_value should return the value from the latest reading."""
+    mock_coordinator.data = {
+        "meter-1": [
+            {"timestamp_end": "2026-03-15T14:15:00+00:00", "value": 0.3, "quality": "measured"},
+            {"timestamp_end": "2026-03-15T14:30:00+00:00", "value": 0.5, "quality": "measured"},
+        ]
+    }
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+    assert sensor.native_value == 0.5
 
+
+def test_native_value_none_when_no_data(mock_coordinator, mock_entry, meter_config):
+    """native_value should return None when coordinator has no data."""
+    mock_coordinator.data = {"meter-1": []}
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+    assert sensor.native_value is None
+
+
+def test_native_value_filters_by_obis_code(mock_coordinator, mock_entry, meter_config):
+    """native_value should only use readings matching this sensor's OBIS code."""
     mock_coordinator.data = {
         "meter-1": [
             {
-                "timestamp": "2026-03-15T14:00:00+00:00",
                 "timestamp_end": "2026-03-15T14:15:00+00:00",
                 "value": 0.3,
                 "obis_code": "1-1:1.9.0 G.01",
-                "quality": 1,
+                "quality": "measured",
             },
             {
-                "timestamp": "2026-03-15T14:00:00+00:00",
                 "timestamp_end": "2026-03-15T14:15:00+00:00",
                 "value": 0.1,
                 "obis_code": "1-1:1.9.0 P.01",
-                "quality": 3,
+                "quality": "estimated",
             },
         ]
     }
-    mock_coordinator.update_last_fetched = MagicMock()
+    sensor = EnergiedatenSensor(
+        mock_coordinator, mock_entry, meter_config, "1-1:1.9.0 G.01"
+    )
+    assert sensor.native_value == 0.3
 
-    with patch.object(sensor, "async_write_historical", new_callable=AsyncMock):
-        await sensor._async_process_readings()
 
-    # Should only have the G.01 reading, not P.01
-    assert len(sensor._attr_historical_states) == 1
-    assert sensor._attr_historical_states[0].state == 0.3
+def test_native_value_updates_dynamic_attributes(
+    mock_coordinator, mock_entry, meter_config
+):
+    """Accessing native_value should update data_quality and last_data_at."""
+    mock_coordinator.data = {
+        "meter-1": [
+            {
+                "timestamp_end": "2026-03-15T14:15:00+00:00",
+                "value": 0.3,
+                "quality": "measured",
+            },
+        ]
+    }
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+    _ = sensor.native_value
+
+    assert sensor.extra_state_attributes["data_quality"] == "measured"
+    assert sensor.extra_state_attributes["last_data_at"] == "2026-03-15T14:15:00+00:00"
