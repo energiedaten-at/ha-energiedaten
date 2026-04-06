@@ -39,7 +39,7 @@ STEP_USER_SCHEMA = vol.Schema(
 class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
     """Config flow for energiedaten.at integration."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialize flow state."""

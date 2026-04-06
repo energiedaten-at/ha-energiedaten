@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EnergiedatenApiClient
-from .const import CONF_TEAM_SLUG, CONF_TOKEN
+from .const import CONF_TEAM_SLUG, CONF_TOKEN, CONF_WATERMARKS
 from .coordinator import EnergiedatenCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON]
@@ -25,6 +25,20 @@ class EnergiedatenData:
 
 
 type EnergiedatenConfigEntry = ConfigEntry[EnergiedatenData]
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> bool:
+    """Migrate config entry to a new version."""
+    if entry.version < 2:
+        # v2: statistics moved from homeassistant-historical-sensor to
+        # async_add_external_statistics with new statistic IDs.
+        # Clear watermarks so the first sync re-fetches all history.
+        new_data = {k: v for k, v in entry.data.items() if k != CONF_WATERMARKS}
+        hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+    return True
 
 
 async def async_setup_entry(
