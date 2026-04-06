@@ -254,3 +254,88 @@ async def test_no_watermark_on_empty_response(coordinator, mock_client):
     )
     await coordinator._async_update_data()
     assert "watermarks" not in coordinator.config_entry.data
+
+
+async def test_correction_triggers_day_refetch(hass, mock_client):
+    """Records within already-imported hours should trigger day re-fetch."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "token": "t",
+            "team_slug": "s",
+            "meters": [
+                {
+                    "uuid": "m1",
+                    "metering_point": "AT0030000000000000000000000054321",
+                    "energy_direction": "consumption",
+                    "label": "X",
+                }
+            ],
+            "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
+        },
+    )
+    entry.add_to_hass(hass)
+    coord = EnergiedatenCoordinator(hass, entry, mock_client)
+
+    # Delta sync returns a record at 14:00 — within an already-imported hour
+    delta_readings = [
+        {
+            "timestamp": "2026-03-15T14:00:00+00:00",
+            "timestamp_end": "2026-03-15T14:15:00+00:00",
+            "value": 0.35,
+            "obis_code": "1-1:1.9.0 G.01",
+        },
+    ]
+    # Full day re-fetch returns complete data for that day
+    day_readings = [
+        {
+            "timestamp": "2026-03-15T14:00:00+00:00",
+            "timestamp_end": "2026-03-15T14:15:00+00:00",
+            "value": 0.35,
+            "obis_code": "1-1:1.9.0 G.01",
+        },
+        {
+            "timestamp": "2026-03-15T14:15:00+00:00",
+            "timestamp_end": "2026-03-15T14:30:00+00:00",
+            "value": 0.4,
+            "obis_code": "1-1:1.9.0 G.01",
+        },
+    ]
+
+    mock_client.async_get_meter_data.side_effect = [
+        MeterDataResult(readings=delta_readings, max_updated_at="2026-03-15T16:00:00+00:00"),
+        MeterDataResult(readings=day_readings, max_updated_at=None),
+    ]
+
+    # Mock recorder: latest stat is at hour 14 → correction detected
+    mock_last_stats = {
+        "energiedaten:AT0030000000000000000000000054321_measured": [
+            {"start": 1773586800.0, "sum": 50.0}  # 2026-03-15T15:00:00 UTC
+        ]
+    }
+
+    with (
+        patch(
+            "custom_components.energiedaten.coordinator.async_add_external_statistics"
+        ) as mock_add_stats,
+        patch(
+            "custom_components.energiedaten.coordinator.get_last_statistics",
+            return_value=mock_last_stats,
+        ),
+        patch(
+            "custom_components.energiedaten.coordinator.get_instance"
+        ) as mock_get_instance,
+        patch(
+            "custom_components.energiedaten.coordinator.statistics_during_period",
+        ) as mock_stats_period,
+    ):
+        mock_get_instance.return_value.async_add_executor_job = AsyncMock(
+            side_effect=[mock_last_stats, {}]  # get_last_statistics, then statistics_during_period
+        )
+        await coord._async_update_data()
+
+    # Should have called API twice: once for delta, once for day re-fetch
+    assert mock_client.async_get_meter_data.call_count == 2
+    # Second call should be for the affected day (no updated_since)
+    second_call = mock_client.async_get_meter_data.call_args_list[1]
+    assert second_call.kwargs.get("updated_since") is None

@@ -16,6 +16,7 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
@@ -146,36 +147,30 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             if not meter_result.readings:
                 continue
 
-            # Group readings by OBIS code
-            obis_groups: dict[str | None, list[dict[str, Any]]] = {}
-            for reading in meter_result.readings:
-                key = reading.get("obis_code")
-                obis_groups.setdefault(key, []).append(reading)
-
-            # Write statistics for each OBIS group
-            for obis_code, readings in obis_groups.items():
-                stat_id = _statistic_id(metering_point, obis_code)
-
-                # Determine anchor sum
-                anchor_sum = 0.0
-                if has_watermark:
-                    row = await self._get_last_sum_row(stat_id)
-                    anchor_sum = (row.get("sum", 0.0) or 0.0) if row else 0.0
-
-                hourly = _build_hourly_statistics(readings, anchor_sum)
-                if not hourly:
-                    continue
-
-                metadata = self._build_metadata(stat_id)
-                stat_data = [
-                    StatisticData(
-                        start=h["start"],
-                        state=h["state"],
-                        sum=h["sum"],
+            if has_watermark:
+                split = await self._detect_corrections(
+                    meter_result.readings, metering_point
+                )
+                if split["corrections"]:
+                    # Re-fetch affected days
+                    affected_days = self._affected_day_range(split["corrections"])
+                    day_result = await self.client.async_get_meter_data(
+                        uuid, affected_days[0], affected_days[1]
                     )
-                    for h in hourly
-                ]
-                async_add_external_statistics(self.hass, metadata, stat_data)
+                    await self._write_correction_statistics(
+                        day_result.readings, metering_point
+                    )
+
+                # Process new data via normal path
+                if split["new"]:
+                    await self._write_new_statistics(
+                        split["new"], metering_point, anchor_from_recorder=True
+                    )
+            else:
+                # First sync — everything is new, anchor=0
+                await self._write_new_statistics(
+                    meter_result.readings, metering_point, anchor_from_recorder=False
+                )
 
             # Only advance watermark after successful statistics write
             if meter_result.max_updated_at:
@@ -217,3 +212,135 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             self.config_entry,
             data={**self.config_entry.data, CONF_WATERMARKS: watermarks},
         )
+
+    async def _detect_corrections(
+        self,
+        readings: list[dict[str, Any]],
+        metering_point: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Split readings into new data and corrections.
+
+        Returns dict with keys 'new' and 'corrections'.
+        Corrections are readings whose hour already has statistics in the recorder.
+        """
+        obis_groups: dict[str | None, list[dict[str, Any]]] = {}
+        for reading in readings:
+            key = reading.get("obis_code")
+            obis_groups.setdefault(key, []).append(reading)
+
+        new_readings: list[dict[str, Any]] = []
+        correction_readings: list[dict[str, Any]] = []
+
+        for obis_code, obis_readings in obis_groups.items():
+            stat_id = _statistic_id(metering_point, obis_code)
+            last_row = await self._get_last_sum_row(stat_id)
+
+            if not last_row:
+                # No existing stats — everything is new
+                new_readings.extend(obis_readings)
+                continue
+
+            # last_row["start"] is a UNIX timestamp
+            latest_hour_ts = last_row["start"]
+
+            for reading in obis_readings:
+                reading_hour = _hour_key(reading)
+                reading_ts = reading_hour.timestamp()
+                if reading_ts <= latest_hour_ts:
+                    correction_readings.append(reading)
+                else:
+                    new_readings.append(reading)
+
+        return {"new": new_readings, "corrections": correction_readings}
+
+    def _affected_day_range(
+        self, corrections: list[dict[str, Any]]
+    ) -> tuple[datetime, datetime]:
+        """Compute the day range that needs re-fetching for corrections."""
+        timestamps = [
+            datetime.fromisoformat(r["timestamp"]) for r in corrections
+        ]
+        earliest = min(timestamps)
+        latest = max(timestamps)
+        start_of_day = earliest.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = (latest.replace(hour=0, minute=0, second=0, microsecond=0)
+                      + timedelta(days=1))
+        return start_of_day, end_of_day
+
+    async def _write_correction_statistics(
+        self,
+        day_readings: list[dict[str, Any]],
+        metering_point: str,
+    ) -> None:
+        """Recompute and upsert statistics for corrected day data."""
+        obis_groups: dict[str | None, list[dict[str, Any]]] = {}
+        for reading in day_readings:
+            key = reading.get("obis_code")
+            obis_groups.setdefault(key, []).append(reading)
+
+        for obis_code, readings in obis_groups.items():
+            stat_id = _statistic_id(metering_point, obis_code)
+
+            # Anchor: get sum from the hour before the earliest reading
+            earliest_hour = _hour_key(readings[0])
+            anchor_sum = await self._get_sum_before(stat_id, earliest_hour)
+
+            hourly = _build_hourly_statistics(readings, anchor_sum)
+            if not hourly:
+                continue
+
+            metadata = self._build_metadata(stat_id)
+            stat_data = [
+                StatisticData(start=h["start"], state=h["state"], sum=h["sum"])
+                for h in hourly
+            ]
+            async_add_external_statistics(self.hass, metadata, stat_data)
+
+    async def _write_new_statistics(
+        self,
+        readings: list[dict[str, Any]],
+        metering_point: str,
+        *,
+        anchor_from_recorder: bool,
+    ) -> None:
+        """Compute and write statistics for new (non-correction) readings."""
+        obis_groups: dict[str | None, list[dict[str, Any]]] = {}
+        for reading in readings:
+            key = reading.get("obis_code")
+            obis_groups.setdefault(key, []).append(reading)
+
+        for obis_code, group_readings in obis_groups.items():
+            stat_id = _statistic_id(metering_point, obis_code)
+
+            anchor_sum = 0.0
+            if anchor_from_recorder:
+                row = await self._get_last_sum_row(stat_id)
+                anchor_sum = (row.get("sum", 0.0) or 0.0) if row else 0.0
+
+            hourly = _build_hourly_statistics(group_readings, anchor_sum)
+            if not hourly:
+                continue
+
+            metadata = self._build_metadata(stat_id)
+            stat_data = [
+                StatisticData(start=h["start"], state=h["state"], sum=h["sum"])
+                for h in hourly
+            ]
+            async_add_external_statistics(self.hass, metadata, stat_data)
+
+    async def _get_sum_before(self, statistic_id: str, before: datetime) -> float:
+        """Get the cumulative sum at the hour before `before`."""
+        result = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            _HISTORY_START,
+            before,
+            {statistic_id},
+            "hour",
+            None,
+            {"sum"},
+        )
+        rows = result.get(statistic_id, [])
+        if rows:
+            return rows[-1].get("sum", 0.0) or 0.0
+        return 0.0
