@@ -153,7 +153,7 @@ Two-step UI wizard.
 ### Step 1: Credentials
 
 | Field | Type | Required | Notes |
-|---|---|---|
+|---|---|---|---|
 | API Key | password input | yes | Sanctum personal access key with `meters:read` and `data:read` scopes |
 
 > Updated 2026-05-18: removed Team Slug field — team is derived from the API key.
