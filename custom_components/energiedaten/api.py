@@ -92,31 +92,34 @@ class EnergiedatenApiClient:
         to_dt: datetime,
         updated_since: str | None = None,
     ) -> MeterDataResult:
-        """Get meter readings, handling cursor pagination internally.
+        """Get meter readings, walking `data_window` pages via `updated_since`.
 
-        When *updated_since* is provided, only records modified after that
-        timestamp are returned (delta sync).  The caller should persist
-        ``max_updated_at`` from the result as the next watermark.
+        The server caps each response at 50 000 records. When `is_truncated`
+        is true, re-request with `updated_since=<max_updated_at>` until the
+        server reports `is_truncated=false`. The caller persists the final
+        `max_updated_at` as the next delta-sync watermark.
         """
         readings: list[dict[str, Any]] = []
         params: dict[str, Any] = {
             "from": from_dt.isoformat(),
             "to": to_dt.isoformat(),
-            "limit": 10000,
             "order": "asc",
         }
         if updated_since is not None:
             params["updated_since"] = updated_since
+            params.pop("order", None)  # server forces ASC when updated_since is set
 
         max_updated_at: str | None = None
         while True:
             data = await self._get(f"/meters/{meter_uuid}/data", params=params)
             readings.extend(data["data"])
-            max_updated_at = data.get("meta", {}).get("max_updated_at", max_updated_at)
+            max_updated_at = data.get("max_updated_at", max_updated_at)
 
-            next_cursor = data.get("meta", {}).get("next_cursor")
-            if not next_cursor:
+            if not data.get("is_truncated"):
                 break
-            params["cursor"] = next_cursor
+
+            # Record-cap pagination: re-request from the last seen watermark.
+            params["updated_since"] = max_updated_at
+            params.pop("order", None)
 
         return MeterDataResult(readings=readings, max_updated_at=max_updated_at)
