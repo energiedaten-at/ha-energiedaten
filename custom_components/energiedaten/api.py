@@ -16,10 +16,6 @@ class AuthenticationError(Exception):
     """Raised on 401/403 responses."""
 
 
-class TeamNotFoundError(Exception):
-    """Raised on 404 for team endpoints."""
-
-
 class MeterNotFoundError(Exception):
     """Raised on 404 for meter endpoints."""
 
@@ -43,11 +39,10 @@ class EnergiedatenApiClient:
         self,
         session: aiohttp.ClientSession,
         token: str,
-        team_slug: str,
     ) -> None:
         self._session = session
         self._token = token
-        self._base_url = f"https://energiedaten.at/api/v1/teams/{team_slug}"
+        self._base_url = "https://energiedaten.at/api/v1"
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -68,7 +63,9 @@ class EnergiedatenApiClient:
         if resp.status == 404:
             if "/meters/" in path:
                 raise MeterNotFoundError(f"Meter not found: {path}")
-            raise TeamNotFoundError("Team not found")
+            # No team-scoped routes anymore; 404 on /meters means the key
+            # doesn't resolve to a team.
+            raise AuthenticationError("Key did not resolve to a team")
         if resp.status == 429:
             raise RateLimitError("Rate limit exceeded")
 

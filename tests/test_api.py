@@ -13,7 +13,6 @@ from custom_components.energiedaten.api import (
     EnergiedatenApiClient,
     MeterDataResult,
     RateLimitError,
-    TeamNotFoundError,
 )
 
 
@@ -43,7 +42,7 @@ def mock_session() -> AsyncMock:
 @pytest.fixture
 def client(mock_session: AsyncMock) -> EnergiedatenApiClient:
     """Create an API client with mocked session."""
-    return EnergiedatenApiClient(mock_session, "test-token", "test-team")
+    return EnergiedatenApiClient(mock_session, "test-token")
 
 
 # --- async_validate ---
@@ -66,9 +65,10 @@ async def test_validate_forbidden(client, mock_session):
         await client.async_validate()
 
 
-async def test_validate_team_not_found(client, mock_session):
+async def test_validate_404_is_auth_error(client, mock_session):
+    """A 404 on /meters has no team-route meaning anymore — treat as auth."""
     mock_session.get.return_value = _mock_response(404)
-    with pytest.raises(TeamNotFoundError):
+    with pytest.raises(AuthenticationError):
         await client.async_validate()
 
 
@@ -217,3 +217,11 @@ async def test_validate_sends_auth_header(client, mock_session):
     call_kwargs = mock_session.get.call_args
     headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
     assert headers["Authorization"] == "Bearer test-token"
+
+
+async def test_client_uses_canonical_base_url(client, mock_session):
+    """Base URL must be /api/v1 with no /teams/{slug} segment."""
+    mock_session.get.return_value = _mock_response(200, {"data": []})
+    await client.async_validate()
+    called_url = mock_session.get.call_args.args[0]
+    assert called_url == "https://energiedaten.at/api/v1/meters"
