@@ -43,7 +43,7 @@ This integration imports your Austrian smart meter energy data from [energiedate
 |---|---|
 | Home Assistant | **2025.12.0** or newer |
 | energiedaten.at account | [Sign up free](https://energiedaten.at), 1 meter included on the Community plan |
-| API key | With `meters:read` and `data:read` scopes ([create one here](https://energiedaten.at/settings/api-keys)). Keys expire — Community plan caps at 365 days. |
+| API key | With `meters:read` and `data:read` scopes ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire — Community plan caps at 365 days. |
 
 ## Installation
 
@@ -119,7 +119,7 @@ Statistics use external statistic IDs in the format `energiedaten:{metering_poin
 | Starter (€29/mo) | 10 | 365 days | 100 req/hour |
 | Growing (€89/mo) | 40 | 2 years | 100 req/hour |
 
-If rate-limited, the integration logs a warning and retries on the next polling cycle. See [energiedaten.at pricing](https://energiedaten.at/pricing) for full details.
+If rate-limited, the integration logs a warning and retries on the next polling cycle. See [energiedaten.at pricing](https://energiedaten.at/en/pricing) for full details.
 
 ## Troubleshooting
 
@@ -139,7 +139,7 @@ If rate-limited, the integration logs a warning and retries on the next polling 
 - Use the `energiedaten.reimport` service in **Developer Tools → Services**. This clears watermarks and triggers a full re-fetch.
 
 **Re-authentication required?**
-- Your API key may have expired (Community plan caps at 365 days). Create a new one at [energiedaten.at → Settings → API Keys](https://energiedaten.at/settings/api-keys).
+- Your API key may have expired (Community plan caps at 365 days). See the [API quickstart](https://energiedaten.at/docs/api#tag/quickstart) for how to create a new one.
 
 **Something else?**
 - [Open a bug report](https://github.com/energiedaten-at/ha-energiedaten/issues/new?template=bug_report.yml)
