@@ -4,12 +4,10 @@
       "user": {
         "title": "Connect to energiedaten.at",
         "data": {
-          "token": "API Token",
-          "team_slug": "Team Slug"
+          "token": "API Key"
         },
         "data_description": {
-          "token": "Create a token at energiedaten.at → Settings → API Tokens (scopes: meters:read, data:read)",
-          "team_slug": "Your team identifier, visible in the energiedaten.at URL"
+          "token": "Create an API key at energiedaten.at → Settings → API Keys (scopes: meters:read, data:read). Keys expire — Community plan caps at 365 days; re-authenticate before then."
         }
       },
       "meters": {
@@ -21,13 +19,12 @@
       "reauth_confirm": {
         "title": "Re-authenticate",
         "data": {
-          "token": "API Token"
+          "token": "API Key"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid API token",
-      "team_not_found": "Team not found",
+      "invalid_auth": "Invalid API key",
       "cannot_connect": "Cannot connect to energiedaten.at"
     },
     "abort": {

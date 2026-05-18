@@ -4,12 +4,10 @@
       "user": {
         "title": "Mit energiedaten.at verbinden",
         "data": {
-          "token": "API-Token",
-          "team_slug": "Team-Slug"
+          "token": "API-Key"
         },
         "data_description": {
-          "token": "Token erstellen unter energiedaten.at → Einstellungen → API-Tokens (Berechtigungen: meters:read, data:read)",
-          "team_slug": "Deine Team-Kennung, sichtbar in der energiedaten.at-URL"
+          "token": "API-Key erstellen unter energiedaten.at → Einstellungen → API-Keys (Berechtigungen: meters:read, data:read). Keys laufen ab — Community-Plan maximal 365 Tage; vor Ablauf erneut authentifizieren."
         }
       },
       "meters": {
@@ -21,13 +19,12 @@
       "reauth_confirm": {
         "title": "Erneut authentifizieren",
         "data": {
-          "token": "API-Token"
+          "token": "API-Key"
         }
       }
     },
     "error": {
-      "invalid_auth": "Ungültiges API-Token",
-      "team_not_found": "Team nicht gefunden",
+      "invalid_auth": "Ungültiger API-Key",
       "cannot_connect": "Verbindung zu energiedaten.at nicht möglich"
     },
     "abort": {
