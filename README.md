@@ -43,7 +43,7 @@ This integration imports your Austrian smart meter energy data from [energiedate
 |---|---|
 | Home Assistant | **2025.12.0** or newer |
 | energiedaten.at account | [Sign up free](https://energiedaten.at), 1 meter included on the Community plan |
-| API token | With `meters:read` and `data:read` scopes ([create one here](https://energiedaten.at/settings/api-tokens)) |
+| API key | With `meters:read` and `data:read` scopes ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire — Community plan caps at 365 days. |
 
 ## Installation
 
@@ -63,7 +63,7 @@ Copy `custom_components/energiedaten/` into your Home Assistant `config/custom_c
 
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **energiedaten.at**
-3. Enter your **API Token** and **Team Slug** (visible in your energiedaten.at URL, e.g. `energiedaten.at/teams/mein-haushalt` → slug is `mein-haushalt`)
+3. Enter your **API Key**
 4. Select which meters to import (all connected meters are pre-selected)
 
 ### Energy Dashboard Setup
@@ -119,7 +119,7 @@ Statistics use external statistic IDs in the format `energiedaten:{metering_poin
 | Starter (€29/mo) | 10 | 365 days | 100 req/hour |
 | Growing (€89/mo) | 40 | 2 years | 100 req/hour |
 
-If rate-limited, the integration logs a warning and retries on the next polling cycle. See [energiedaten.at pricing](https://energiedaten.at/pricing) for full details.
+If rate-limited, the integration logs a warning and retries on the next polling cycle. See [energiedaten.at pricing](https://energiedaten.at/en/pricing) for full details.
 
 ## Troubleshooting
 
@@ -132,11 +132,14 @@ If rate-limited, the integration logs a warning and retries on the next polling 
 - v0.3.0 changed statistic IDs from entity-based to external format. After upgrading, go to **Settings → Dashboards → Energy** and re-select your statistics.
 - The first sync after upgrade automatically re-fetches all available history.
 
+**Upgraded to 0.4.x from 0.3.x?**
+- The team-slug field is gone — the team is now derived from your API key. Existing setups are migrated automatically on first load; no user action required.
+
 **Want to re-import all data?**
 - Use the `energiedaten.reimport` service in **Developer Tools → Services**. This clears watermarks and triggers a full re-fetch.
 
 **Re-authentication required?**
-- Your API token may have expired. Create a new one at [energiedaten.at → Settings → API Tokens](https://energiedaten.at/settings/api-tokens).
+- Your API key may have expired (Community plan caps at 365 days). See the [API quickstart](https://energiedaten.at/docs/api#tag/quickstart) for how to create a new one.
 
 **Something else?**
 - [Open a bug report](https://github.com/energiedaten-at/ha-energiedaten/issues/new?template=bug_report.yml)

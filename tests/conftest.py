@@ -48,7 +48,6 @@ def mock_config_entry() -> MockConfigEntry:
         title="mein-haushalt",
         data={
             "token": "test-token",
-            "team_slug": "mein-haushalt",
             "meters": [
                 {
                     "uuid": "meter-1",

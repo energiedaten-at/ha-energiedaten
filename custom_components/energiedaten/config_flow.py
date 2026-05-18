@@ -19,18 +19,20 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .api import AuthenticationError, EnergiedatenApiClient, TeamNotFoundError
-from .const import CONF_METERS, CONF_TEAM_SLUG, CONF_TOKEN, DOMAIN
+from .api import AuthenticationError, EnergiedatenApiClient
+from .const import CONF_METERS, CONF_TOKEN, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Team is derived from the API key server-side; we don't know the team
+# name without an extra call, so we use a fixed title. (See open question
+# in the spec about adding /api/v1/user lookup for a friendlier label.)
+_ENTRY_TITLE = "energiedaten.at"
 
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_TOKEN): TextSelector(
             TextSelectorConfig(type=TextSelectorType.PASSWORD)
-        ),
-        vol.Required(CONF_TEAM_SLUG): TextSelector(
-            TextSelectorConfig(type=TextSelectorType.TEXT)
         ),
     }
 )
@@ -39,37 +41,33 @@ STEP_USER_SCHEMA = vol.Schema(
 class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
     """Config flow for energiedaten.at integration."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         """Initialize flow state."""
         self._token: str = ""
-        self._team_slug: str = ""
         self._meters: list[dict[str, Any]] = []
 
-    def _create_client(self, token: str, team_slug: str) -> EnergiedatenApiClient:
+    def _create_client(self, token: str) -> EnergiedatenApiClient:
         """Create an API client using HA's shared aiohttp session."""
         session = async_get_clientsession(self.hass)
-        return EnergiedatenApiClient(session, token, team_slug)
+        return EnergiedatenApiClient(session, token)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step 1: Collect API token and team slug."""
+        """Step 1: Collect API key."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             self._token = user_input[CONF_TOKEN]
-            self._team_slug = user_input[CONF_TEAM_SLUG]
-            client = self._create_client(self._token, self._team_slug)
+            client = self._create_client(self._token)
 
             try:
                 await client.async_validate()
                 self._meters = await client.async_get_meters()
             except AuthenticationError:
                 errors["base"] = "invalid_auth"
-            except TeamNotFoundError:
-                errors["base"] = "team_not_found"
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error during validation")
                 errors["base"] = "cannot_connect"
@@ -99,10 +97,9 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
                 if m["id"] in selected_uuids
             ]
             return self.async_create_entry(
-                title=self._team_slug,
+                title=_ENTRY_TITLE,
                 data={
                     CONF_TOKEN: self._token,
-                    CONF_TEAM_SLUG: self._team_slug,
                     CONF_METERS: selected_meters,
                 },
             )
@@ -145,17 +142,16 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: dict[str, Any]
     ) -> ConfigFlowResult:
         """Handle re-authentication trigger."""
-        self._team_slug = entry_data[CONF_TEAM_SLUG]
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step: Re-enter API token."""
+        """Step: Re-enter API key."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            client = self._create_client(user_input[CONF_TOKEN], self._team_slug)
+            client = self._create_client(user_input[CONF_TOKEN])
             try:
                 await client.async_validate()
             except AuthenticationError:

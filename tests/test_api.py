@@ -13,7 +13,6 @@ from custom_components.energiedaten.api import (
     EnergiedatenApiClient,
     MeterDataResult,
     RateLimitError,
-    TeamNotFoundError,
 )
 
 
@@ -43,7 +42,7 @@ def mock_session() -> AsyncMock:
 @pytest.fixture
 def client(mock_session: AsyncMock) -> EnergiedatenApiClient:
     """Create an API client with mocked session."""
-    return EnergiedatenApiClient(mock_session, "test-token", "test-team")
+    return EnergiedatenApiClient(mock_session, "test-token")
 
 
 # --- async_validate ---
@@ -66,9 +65,10 @@ async def test_validate_forbidden(client, mock_session):
         await client.async_validate()
 
 
-async def test_validate_team_not_found(client, mock_session):
+async def test_validate_404_is_auth_error(client, mock_session):
+    """A 404 on /meters has no team-route meaning anymore — treat as auth."""
     mock_session.get.return_value = _mock_response(404)
-    with pytest.raises(TeamNotFoundError):
+    with pytest.raises(AuthenticationError):
         await client.async_validate()
 
 
@@ -94,10 +94,13 @@ async def test_get_meter_data_single_page(client, mock_session):
         {"timestamp": "2026-03-15T14:00:00Z", "timestamp_end": "2026-03-15T14:15:00Z", "value": 0.3},
     ]
     mock_session.get.return_value = _mock_response(
-        200, {
+        200,
+        {
+            "object": "data_window",
             "data": readings,
-            "meta": {"next_cursor": None, "max_updated_at": "2026-03-15T15:00:00+00:00"},
-        }
+            "is_truncated": False,
+            "max_updated_at": "2026-03-15T15:00:00+00:00",
+        },
     )
     result = await client.async_get_meter_data(
         "m1",
@@ -110,22 +113,42 @@ async def test_get_meter_data_single_page(client, mock_session):
 
 
 async def test_get_meter_data_pagination(client, mock_session):
-    page1 = _mock_response(200, {
-        "data": [{"timestamp": "2026-03-15T14:00:00Z", "value": 0.3}],
-        "meta": {"next_cursor": "cursor-abc", "max_updated_at": "2026-03-15T15:00:00+00:00"},
-    })
-    page2 = _mock_response(200, {
-        "data": [{"timestamp": "2026-03-15T14:15:00Z", "value": 0.4}],
-        "meta": {"next_cursor": None, "max_updated_at": "2026-03-15T15:00:00+00:00"},
-    })
+    """When is_truncated=true, the client re-requests with updated_since=max_updated_at."""
+    page1 = _mock_response(
+        200,
+        {
+            "object": "data_window",
+            "data": [{"timestamp": "2026-03-15T14:00:00Z", "value": 0.3}],
+            "is_truncated": True,
+            "max_updated_at": "2026-03-15T15:00:00+00:00",
+        },
+    )
+    page2 = _mock_response(
+        200,
+        {
+            "object": "data_window",
+            "data": [{"timestamp": "2026-03-15T14:15:00Z", "value": 0.4}],
+            "is_truncated": False,
+            "max_updated_at": "2026-03-15T15:15:00+00:00",
+        },
+    )
     mock_session.get.side_effect = [page1, page2]
+
     result = await client.async_get_meter_data(
         "m1",
         datetime(2026, 3, 15, tzinfo=timezone.utc),
         datetime(2026, 3, 16, tzinfo=timezone.utc),
     )
+
     assert len(result.readings) == 2
+    assert result.max_updated_at == "2026-03-15T15:15:00+00:00"
     assert mock_session.get.call_count == 2
+
+    second_call_params = mock_session.get.call_args_list[1].kwargs["params"]
+    assert second_call_params["updated_since"] == "2026-03-15T15:00:00+00:00"
+    assert "order" not in second_call_params  # server forces ASC when updated_since is set
+    assert "cursor" not in second_call_params
+    assert "limit" not in second_call_params
 
 
 async def test_get_meter_data_rate_limited(client, mock_session):
@@ -140,25 +163,27 @@ async def test_get_meter_data_rate_limited(client, mock_session):
 
 async def test_get_meter_data_sends_correct_params(client, mock_session):
     mock_session.get.return_value = _mock_response(
-        200, {"data": [], "meta": {"next_cursor": None}}
+        200,
+        {"object": "data_window", "data": [], "is_truncated": False},
     )
     from_dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
     to_dt = datetime(2026, 3, 16, tzinfo=timezone.utc)
     await client.async_get_meter_data("m1", from_dt, to_dt)
 
-    call_kwargs = mock_session.get.call_args
-    params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params")
+    params = mock_session.get.call_args.kwargs["params"]
     assert params["from"] == from_dt.isoformat()
     assert params["to"] == to_dt.isoformat()
-    assert params["limit"] == 10000
     assert params["order"] == "asc"
-    assert "updated_since" not in params
+    assert "limit" not in params           # MeterDataRequest rejects it
+    assert "cursor" not in params          # legacy pagination
+    assert "updated_since" not in params   # not supplied on entry
 
 
 async def test_get_meter_data_sends_updated_since(client, mock_session):
-    """When updated_since is provided, it should be passed as a query param."""
+    """When updated_since is provided, it should be sent and `order` should be omitted."""
     mock_session.get.return_value = _mock_response(
-        200, {"data": [], "meta": {"next_cursor": None}}
+        200,
+        {"object": "data_window", "data": [], "is_truncated": False},
     )
     from_dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
     to_dt = datetime(2026, 3, 16, tzinfo=timezone.utc)
@@ -166,15 +191,16 @@ async def test_get_meter_data_sends_updated_since(client, mock_session):
         "m1", from_dt, to_dt, updated_since="2026-03-15T12:00:00+00:00"
     )
 
-    call_kwargs = mock_session.get.call_args
-    params = call_kwargs.kwargs.get("params") or call_kwargs[1].get("params")
+    params = mock_session.get.call_args.kwargs["params"]
     assert params["updated_since"] == "2026-03-15T12:00:00+00:00"
+    assert "order" not in params
 
 
 async def test_get_meter_data_empty_response_has_no_watermark(client, mock_session):
     """Empty response without max_updated_at should return None watermark."""
     mock_session.get.return_value = _mock_response(
-        200, {"data": [], "meta": {"next_cursor": None}}
+        200,
+        {"object": "data_window", "data": [], "is_truncated": False},
     )
     result = await client.async_get_meter_data(
         "m1",
@@ -191,3 +217,11 @@ async def test_validate_sends_auth_header(client, mock_session):
     call_kwargs = mock_session.get.call_args
     headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
     assert headers["Authorization"] == "Bearer test-token"
+
+
+async def test_client_uses_canonical_base_url(client, mock_session):
+    """Base URL must be /api/v1 with no /teams/{slug} segment."""
+    mock_session.get.return_value = _mock_response(200, {"data": []})
+    await client.async_validate()
+    called_url = mock_session.get.call_args.args[0]
+    assert called_url == "https://energiedaten.at/api/v1/meters"

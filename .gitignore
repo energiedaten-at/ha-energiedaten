@@ -9,3 +9,7 @@ build/
 *.egg-info/
 .env
 .venv
+
+# Local planning / scratch (not shipped with the integration)
+docs/superpowers/
+.claude/
