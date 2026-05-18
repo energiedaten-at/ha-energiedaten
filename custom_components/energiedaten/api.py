@@ -78,7 +78,7 @@ class EnergiedatenApiClient:
         return True
 
     async def async_get_meters(self) -> list[dict[str, Any]]:
-        """Get all meters for the team."""
+        """Get all meters the API key has access to."""
         data = await self._get("/meters")
         return data["data"]
 
