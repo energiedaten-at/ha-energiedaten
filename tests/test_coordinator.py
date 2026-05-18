@@ -62,7 +62,6 @@ async def test_incremental_fetch_uses_watermark(hass: HomeAssistant, mock_client
         domain=DOMAIN,
         data={
             "token": "t",
-            "team_slug": "s",
             "meters": [
                 {
                     "uuid": "m1",
@@ -166,7 +165,6 @@ async def test_normal_sync_anchors_sum_from_recorder(hass, mock_client):
         domain=DOMAIN,
         data={
             "token": "t",
-            "team_slug": "s",
             "meters": [
                 {
                     "uuid": "m1",
@@ -262,7 +260,6 @@ async def test_correction_triggers_day_refetch(hass, mock_client):
         domain=DOMAIN,
         data={
             "token": "t",
-            "team_slug": "s",
             "meters": [
                 {
                     "uuid": "m1",

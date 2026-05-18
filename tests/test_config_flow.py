@@ -12,7 +12,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.energiedaten.api import AuthenticationError, TeamNotFoundError
+from custom_components.energiedaten.api import AuthenticationError
 from custom_components.energiedaten.const import DOMAIN
 
 MOCK_METERS = [
@@ -82,7 +82,7 @@ async def test_step_user_success_advances_to_meters(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "valid-token", "team_slug": "mein-haushalt"},
+        user_input={"token": "valid-token"},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "meters"
@@ -96,25 +96,11 @@ async def test_step_user_invalid_auth(hass: HomeAssistant, mock_api) -> None:
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "bad-token", "team_slug": "test"},
+        user_input={"token": "bad-token"},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
     assert result["errors"] == {"base": "invalid_auth"}
-
-
-async def test_step_user_team_not_found(hass: HomeAssistant, mock_api) -> None:
-    """Unknown team slug should show error on step 1."""
-    mock_api.async_validate.side_effect = TeamNotFoundError
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"token": "token", "team_slug": "nonexistent"},
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "team_not_found"}
 
 
 async def test_step_user_cannot_connect(hass: HomeAssistant, mock_api) -> None:
@@ -125,7 +111,7 @@ async def test_step_user_cannot_connect(hass: HomeAssistant, mock_api) -> None:
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "token", "team_slug": "test"},
+        user_input={"token": "token"},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
@@ -135,13 +121,13 @@ async def test_step_user_cannot_connect(hass: HomeAssistant, mock_api) -> None:
 
 
 async def test_step_meters_creates_entry(hass: HomeAssistant, mock_api) -> None:
-    """Selecting meters should create the config entry."""
+    """Selecting meters should create the config entry with a fixed title."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "token", "team_slug": "mein-haushalt"},
+        user_input={"token": "token"},
     )
     with patch(
         "custom_components.energiedaten.async_setup_entry",
@@ -154,9 +140,9 @@ async def test_step_meters_creates_entry(hass: HomeAssistant, mock_api) -> None:
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "mein-haushalt"
+    assert result["title"] == "energiedaten.at"
     assert result["data"]["token"] == "token"
-    assert result["data"]["team_slug"] == "mein-haushalt"
+    assert "team_slug" not in result["data"]
     assert len(result["data"]["meters"]) == 1
     assert result["data"]["meters"][0]["uuid"] == "meter-1"
     assert result["data"]["meters"][0]["energy_direction"] == "consumption"
@@ -169,7 +155,7 @@ async def test_step_meters_only_shows_connected(hass: HomeAssistant, mock_api) -
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "token", "team_slug": "mein-haushalt"},
+        user_input={"token": "token"},
     )
     # Default should be all connected meter UUIDs (2, not 3)
     schema = result["data_schema"].schema
@@ -188,7 +174,7 @@ async def test_step_meters_multiple_selection(hass: HomeAssistant, mock_api) -> 
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"token": "token", "team_slug": "test"},
+        user_input={"token": "token"},
     )
     with patch(
         "custom_components.energiedaten.async_setup_entry",
@@ -210,7 +196,8 @@ async def test_reauth_flow(hass: HomeAssistant, mock_api) -> None:
     """Reauth flow should update token and reload."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"token": "old-token", "team_slug": "test", "meters": []},
+        version=3,
+        data={"token": "old-token", "meters": []},
     )
     entry.add_to_hass(hass)
 
@@ -237,7 +224,8 @@ async def test_reauth_invalid_token(hass: HomeAssistant, mock_api) -> None:
     mock_api.async_validate.side_effect = AuthenticationError
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"token": "old", "team_slug": "test", "meters": []},
+        version=3,
+        data={"token": "old", "meters": []},
     )
     entry.add_to_hass(hass)
 
@@ -248,3 +236,9 @@ async def test_reauth_invalid_token(hass: HomeAssistant, mock_api) -> None:
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_config_flow_version_is_3() -> None:
+    """Lock the schema version so accidental downgrades fail loudly."""
+    from custom_components.energiedaten.config_flow import EnergiedatenConfigFlow
+    assert EnergiedatenConfigFlow.VERSION == 3
