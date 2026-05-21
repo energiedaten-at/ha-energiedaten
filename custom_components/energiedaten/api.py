@@ -61,9 +61,9 @@ class EnergiedatenApiClient:
         if resp.status in (401, 403):
             raise AuthenticationError(f"Authentication failed: {resp.status}")
         if resp.status == 404:
-            if "/meters/" in path:
+            if "/smart-meters/" in path:
                 raise MeterNotFoundError(f"Meter not found: {path}")
-            # No team-scoped routes anymore; 404 on /meters means the key
+            # No team-scoped routes anymore; 404 on /smart-meters means the key
             # doesn't resolve to a team.
             raise AuthenticationError("Key did not resolve to a team")
         if resp.status == 429:
@@ -73,13 +73,13 @@ class EnergiedatenApiClient:
         return await resp.json()
 
     async def async_validate(self) -> bool:
-        """Validate credentials by calling GET /meters."""
-        await self._get("/meters")
+        """Validate credentials by calling GET /smart-meters."""
+        await self._get("/smart-meters")
         return True
 
     async def async_get_meters(self) -> list[dict[str, Any]]:
         """Get all meters the API key has access to."""
-        data = await self._get("/meters")
+        data = await self._get("/smart-meters")
         return data["data"]
 
     async def async_get_meter_data(
@@ -108,7 +108,7 @@ class EnergiedatenApiClient:
 
         max_updated_at: str | None = None
         while True:
-            data = await self._get(f"/meters/{meter_uuid}/data", params=params)
+            data = await self._get(f"/smart-meters/{meter_uuid}/data", params=params)
             readings.extend(data["data"])
             max_updated_at = data.get("max_updated_at", max_updated_at)
 

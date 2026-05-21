@@ -66,7 +66,7 @@ async def test_validate_forbidden(client, mock_session):
 
 
 async def test_validate_404_is_auth_error(client, mock_session):
-    """A 404 on /meters has no team-route meaning anymore — treat as auth."""
+    """A 404 on /smart-meters has no team-route meaning anymore — treat as auth."""
     mock_session.get.return_value = _mock_response(404)
     with pytest.raises(AuthenticationError):
         await client.async_validate()
@@ -224,4 +224,4 @@ async def test_client_uses_canonical_base_url(client, mock_session):
     mock_session.get.return_value = _mock_response(200, {"data": []})
     await client.async_validate()
     called_url = mock_session.get.call_args.args[0]
-    assert called_url == "https://energiedaten.at/api/v1/meters"
+    assert called_url == "https://energiedaten.at/api/v1/smart-meters"

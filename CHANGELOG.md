@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-05-21
+
+### Breaking
+
+- **API path renamed** from `/api/v1/meters` to `/api/v1/smart-meters` to
+  match the upstream rename on energiedaten.at. No configuration change is
+  required — restart Home Assistant after upgrading. If the integration was
+  failing to reach meters on the old path, this release restores it.
+
+## [0.4.0] - 2026-05-18
+
+### Breaking
+
+- **Migrated to the canonical v1 API contract.** The `team_slug` segment is
+  gone from the URL and from the config entry; requests now go to
+  `https://energiedaten.at/api/v1/*` directly. Existing installs are
+  upgraded automatically (config-entry schema v1 → v2 → v3) — no re-auth
+  needed.
+
+### Added
+
+- `data_window` envelope handling: responses are walked via `updated_since`
+  using the server's `is_truncated` / `max_updated_at` signals, so
+  grid-operator backdated corrections are picked up on the next sync.
+
+### Changed
+
+- Terminology aligned with the upstream rename (token → key) across README,
+  `strings.json`, and translations.
+- README: API-key references now point at `/docs/api#tag/quickstart`;
+  pricing link fixed to `/en/pricing`.
+
+### CI
+
+- Broadened hassfest / HACS workflow triggers so feature branches get
+  validated.
+
 ## [0.3.0] - 2026-04-06
 
 ### Breaking
