@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-05-25
+
+### Fixed
+
+- Setup no longer fails with "Unknown error occurred" on the meter-selection
+  step. The `/smart-meters` response field is `metering_point_number`; the
+  config flow was reading the old `metering_point` key and raising `KeyError`
+  on Submit. Tests now mirror the live response shape so this doesn't
+  regress.
+
 ## [0.5.0] - 2026-05-21
 
 ### Breaking

@@ -18,7 +18,7 @@ from custom_components.energiedaten.const import DOMAIN
 MOCK_METERS = [
     {
         "id": "meter-1",
-        "metering_point": "AT0030000000000000000000000054321",
+        "metering_point_number": "AT0030000000000000000000000054321",
         "label": "Wohnung",
         "display_name": "Wohnung",
         "energy_direction": "consumption",
@@ -28,7 +28,7 @@ MOCK_METERS = [
     },
     {
         "id": "meter-2",
-        "metering_point": "AT0030000000000000000000000054322",
+        "metering_point_number": "AT0030000000000000000000000054322",
         "label": "PV Anlage",
         "display_name": "PV Anlage",
         "energy_direction": "feed_in",
@@ -38,7 +38,7 @@ MOCK_METERS = [
     },
     {
         "id": "meter-3",
-        "metering_point": "AT0030000000000000000000000099999",
+        "metering_point_number": "AT0030000000000000000000000099999",
         "label": "Pending Meter",
         "display_name": "Pending Meter",
         "energy_direction": "consumption",
@@ -187,6 +187,53 @@ async def test_step_meters_multiple_selection(hass: HomeAssistant, mock_api) -> 
         await hass.async_block_till_done()
 
     assert len(result["data"]["meters"]) == 2
+
+
+async def test_step_meters_handles_live_api_field_name(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """The /smart-meters response uses metering_point_number, not metering_point.
+
+    Regression test for the v0.5.0 setup failure: when the live API returns
+    `metering_point_number`, submitting the meter-selection step previously
+    raised KeyError('metering_point') and surfaced as 'Unknown error occurred'.
+    """
+    live_shape_meters = [
+        {
+            "object": "smart_meter",
+            "id": "meter-live-1",
+            "metering_point_number": "AT0010000000000000001000099999999",
+            "label": "Bezug",
+            "display_name": "Bezug",
+            "energy_direction": "consumption",
+            "granularity": "quarter_hour",
+            "status": "connected",
+        },
+    ]
+    mock_api.async_get_meters.return_value = live_shape_meters
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"token": "token"},
+    )
+    with patch(
+        "custom_components.energiedaten.async_setup_entry",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"meters": ["meter-live-1"]},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    stored = result["data"]["meters"][0]
+    assert stored["uuid"] == "meter-live-1"
+    assert stored["metering_point"] == "AT0010000000000000001000099999999"
+    assert stored["energy_direction"] == "consumption"
 
 
 # --- Reauth ---

@@ -77,8 +77,8 @@ async def test_validate_404_is_auth_error(client, mock_session):
 
 async def test_get_meters_returns_list(client, mock_session):
     meters = [
-        {"id": "m1", "metering_point": "AT003...", "status": "connected"},
-        {"id": "m2", "metering_point": "AT003...", "status": "pending"},
+        {"id": "m1", "metering_point_number": "AT003...", "status": "connected"},
+        {"id": "m2", "metering_point_number": "AT003...", "status": "pending"},
     ]
     mock_session.get.return_value = _mock_response(200, {"data": meters})
     result = await client.async_get_meters()

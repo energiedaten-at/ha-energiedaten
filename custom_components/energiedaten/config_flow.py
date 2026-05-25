@@ -86,10 +86,13 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
         """Step 2: Select which meters to import."""
         if user_input is not None:
             selected_uuids = user_input[CONF_METERS]
+            # Live API returns `metering_point_number`; we store it as
+            # `metering_point` so downstream code (coordinator, sensor) sees
+            # a stable internal key.
             selected_meters = [
                 {
                     "uuid": m["id"],
-                    "metering_point": m["metering_point"],
+                    "metering_point": m["metering_point_number"],
                     "energy_direction": m["energy_direction"],
                     "label": m.get("label"),
                 }
@@ -132,7 +135,7 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _meter_display_name(meter: dict[str, Any]) -> str:
         """Format meter display name for the selection list."""
-        label = meter.get("label") or meter["metering_point"][-6:]
+        label = meter.get("label") or meter["metering_point_number"][-6:]
         direction = (
             "Consumption" if meter["energy_direction"] == "consumption" else "Feed-in"
         )
