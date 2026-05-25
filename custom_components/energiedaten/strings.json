@@ -28,7 +28,8 @@
       "cannot_connect": "Cannot connect to energiedaten.at"
     },
     "abort": {
-      "reauth_successful": "Re-authentication successful"
+      "reauth_successful": "Re-authentication successful",
+      "reconfigure_successful": "Configuration updated"
     }
   },
   "services": {

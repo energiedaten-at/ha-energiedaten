@@ -28,7 +28,8 @@
       "cannot_connect": "Verbindung zu energiedaten.at nicht möglich"
     },
     "abort": {
-      "reauth_successful": "Erneute Authentifizierung erfolgreich"
+      "reauth_successful": "Erneute Authentifizierung erfolgreich",
+      "reconfigure_successful": "Konfiguration aktualisiert"
     }
   },
   "services": {

@@ -236,6 +236,134 @@ async def test_step_meters_handles_live_api_field_name(
     assert stored["energy_direction"] == "consumption"
 
 
+# --- Reconfigure ---
+
+
+def _make_reconfigure_entry() -> MockConfigEntry:
+    """Build a v3 config entry as it would look after the original setup."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        version=3,
+        title="energiedaten.at",
+        data={
+            "token": "old-token",
+            "meters": [
+                {
+                    "uuid": "meter-1",
+                    "metering_point": "AT0030000000000000000000000054321",
+                    "energy_direction": "consumption",
+                    "label": "Wohnung",
+                },
+            ],
+            "watermarks": {"meter-1": "2026-05-20T00:00:00Z"},
+        },
+    )
+
+
+async def test_reconfigure_shows_user_step(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """Reconfigure entry point should display the credentials form."""
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+
+async def test_reconfigure_updates_token_and_meters(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """Submitting both steps should update the entry in place (not create)."""
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"token": "new-token"},
+    )
+    assert result["step_id"] == "meters"
+
+    with patch(
+        "custom_components.energiedaten.async_setup_entry",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"meters": ["meter-1", "meter-2"]},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["token"] == "new-token"
+    uuids = {m["uuid"] for m in entry.data["meters"]}
+    assert uuids == {"meter-1", "meter-2"}
+
+
+async def test_reconfigure_preserves_watermarks(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """Reconfigure must not blow away the delta-sync watermarks."""
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"token": "new-token"},
+    )
+    with patch(
+        "custom_components.energiedaten.async_setup_entry",
+        return_value=True,
+    ):
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={"meters": ["meter-1"]},
+        )
+        await hass.async_block_till_done()
+
+    assert entry.data["watermarks"] == {"meter-1": "2026-05-20T00:00:00Z"}
+
+
+async def test_reconfigure_invalid_auth_shows_error(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """Bad key during reconfigure should surface invalid_auth, not crash."""
+    mock_api.async_validate.side_effect = AuthenticationError
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"token": "still-bad"},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_reconfigure_meter_step_defaults_to_current_selection(
+    hass: HomeAssistant, mock_api
+) -> None:
+    """The meter form should pre-check whichever meters are already imported."""
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={"token": "new-token"},
+    )
+
+    schema = result["data_schema"].schema
+    meters_key = next(k for k in schema if str(k) == "meters")
+    assert meters_key.default() == ["meter-1"]
+
+
 # --- Reauth ---
 
 

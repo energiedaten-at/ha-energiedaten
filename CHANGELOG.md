@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-05-25
+
+### Added
+
+- **Reconfigure flow.** A "Reconfigure" entry on the integration card lets
+  you swap the API key and/or change which meters are imported without
+  removing and re-adding the integration. Delta-sync watermarks for
+  meters that stay selected are preserved across the reconfigure.
+
 ## [0.5.1] - 2026-05-25
 
 ### Fixed

@@ -7,7 +7,11 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     SelectOptionDict,
@@ -99,6 +103,15 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
                 for m in self._meters
                 if m["id"] in selected_uuids
             ]
+            if self.source == SOURCE_RECONFIGURE:
+                # data_updates merges with entry.data, preserving watermarks.
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={
+                        CONF_TOKEN: self._token,
+                        CONF_METERS: selected_meters,
+                    },
+                )
             return self.async_create_entry(
                 title=_ENTRY_TITLE,
                 data={
@@ -115,13 +128,13 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             for m in connected
         ]
-        all_uuids = [m["id"] for m in connected]
+        default_uuids = self._default_meter_uuids(connected)
 
         return self.async_show_form(
             step_id="meters",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_METERS, default=all_uuids): SelectSelector(
+                    vol.Required(CONF_METERS, default=default_uuids): SelectSelector(
                         SelectSelectorConfig(
                             options=options,
                             multiple=True,
@@ -132,6 +145,19 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    def _default_meter_uuids(
+        self, connected: list[dict[str, Any]]
+    ) -> list[str]:
+        """Default the meter checkboxes to current selection (reconfigure) or all."""
+        connected_ids = [m["id"] for m in connected]
+        if self.source != SOURCE_RECONFIGURE:
+            return connected_ids
+        currently_imported = {
+            m["uuid"] for m in self._get_reconfigure_entry().data.get(CONF_METERS, [])
+        }
+        # Intersect with connected so stale or disconnected meters drop out.
+        return [uuid for uuid in connected_ids if uuid in currently_imported]
+
     @staticmethod
     def _meter_display_name(meter: dict[str, Any]) -> str:
         """Format meter display name for the selection list."""
@@ -140,6 +166,12 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
             "Consumption" if meter["energy_direction"] == "consumption" else "Feed-in"
         )
         return f"{label} ({direction})"
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Re-run the user step + meter selection on an existing entry."""
+        return await self.async_step_user(user_input)
 
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
