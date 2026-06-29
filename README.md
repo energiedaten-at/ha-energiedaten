@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Custom-41BDF5.svg" alt="HACS Custom"></a>
+  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS Default"></a>
   <img src="https://img.shields.io/badge/status-beta-orange" alt="Beta">
   <a href="https://github.com/energiedaten-at/ha-energiedaten/issues"><img src="https://img.shields.io/github/issues/energiedaten-at/ha-energiedaten" alt="Issues"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/energiedaten-at/ha-energiedaten" alt="License"></a>
@@ -22,7 +22,7 @@
 
 ## What It Does
 
-This integration imports your Austrian smart meter energy data from [energiedaten.at](https://energiedaten.at) into Home Assistant's Energy Dashboard. No scraping, no manual CSV uploads, just quarter-hourly consumption and feed-in data delivered automatically.
+This integration imports your Austrian smart meter energy data from [energiedaten.at](https://energiedaten.at) into Home Assistant's Energy Dashboard. You get quarter-hourly consumption and feed-in readings with no scraping or CSV exports to manage.
 
 [energiedaten.at](https://energiedaten.at) handles the complexity of Austria's energy data infrastructure (EDA network) so you don't have to. Register your meter, give consent, and receive data. This integration brings that data into Home Assistant.
 
@@ -43,17 +43,22 @@ This integration imports your Austrian smart meter energy data from [energiedate
 |---|---|
 | Home Assistant | **2025.12.0** or newer |
 | energiedaten.at account | [Sign up free](https://energiedaten.at), 1 meter included on the Community plan |
-| API key | With `meters:read` and `data:read` scopes ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire — Community plan caps at 365 days. |
+| API key | With `meters:read` and `data:read` scopes ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire; the Community plan caps at 365 days. |
 
 ## Installation
 
 ### HACS (Recommended)
 
+energiedaten.at is now a **default HACS integration**, so you don't need to add a custom repository.
+
 1. Open **HACS** in Home Assistant
-2. Click the three dots menu → **Custom repositories**
-3. Add `https://github.com/energiedaten-at/ha-energiedaten` as an **Integration**
-4. Search for **energiedaten.at** and install
-5. Restart Home Assistant
+2. Search for **energiedaten.at**
+3. Open it and click **Download**
+4. Restart Home Assistant
+
+Or jump straight there with the one-click button:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=energiedaten-at&repository=ha-energiedaten&category=integration)
 
 ### Manual
 
@@ -85,7 +90,7 @@ One sensor per selected meter and OBIS code:
 | Consumption | `{label} Consumption` | Wohnung Consumption |
 | Feed-in | `{label} Feed-in` | PV Anlage Feed-in |
 
-Each sensor's state shows the latest quarter-hour reading in kWh. Additionally, cumulative long-term statistics are written for the Energy Dashboard.
+Each sensor's state shows the latest quarter-hour reading in kWh. It also writes cumulative long-term statistics for the Energy Dashboard.
 
 Sensor attributes:
 
@@ -130,10 +135,10 @@ If rate-limited, the integration logs a warning and retries on the next polling 
 
 **Upgraded from 0.2.x?**
 - v0.3.0 changed statistic IDs from entity-based to external format. After upgrading, go to **Settings → Dashboards → Energy** and re-select your statistics.
-- The first sync after upgrade automatically re-fetches all available history.
+- The first sync after upgrade re-fetches all available history.
 
 **Upgraded to 0.4.x from 0.3.x?**
-- The team-slug field is gone — the team is now derived from your API key. Existing setups are migrated automatically on first load; no user action required.
+- The team-slug field is gone; the team is now derived from your API key. Existing setups are migrated on first load, with no user action required.
 
 **Want to re-import all data?**
 - Use the `energiedaten.reimport` service in **Developer Tools → Services**. This clears watermarks and triggers a full re-fetch.
