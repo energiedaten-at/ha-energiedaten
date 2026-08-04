@@ -34,7 +34,7 @@ from .api import (
     MeterDataResult,
     RateLimitError,
 )
-from .const import CONF_CURSORS, CONF_METERS, DOMAIN
+from .const import CONF_CURSORS, CONF_METERS, CONF_OBIS_CODES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,6 +126,9 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
         """Fetch new readings for each meter and write statistics."""
         meters = self.config_entry.data.get(CONF_METERS, [])
         cursors: dict[str, str] = dict(self.config_entry.data.get(CONF_CURSORS, {}))
+        known_codes: dict[str, list[str]] = self.config_entry.data.get(
+            CONF_OBIS_CODES, {}
+        )
         now = datetime.now(timezone.utc)
         result: dict[str, list[dict[str, Any]]] = {}
         self._pending_cursors = {}
@@ -134,6 +137,13 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             uuid = meter["uuid"]
             metering_point = meter["metering_point"]
             cursor = cursors.get(uuid)
+
+            if uuid not in known_codes:
+                # We have never seen this meter's readings, so we don't know
+                # which sensors it needs. A cursor read returns an empty page
+                # whenever nothing changed and could never tell us — take the
+                # window read once instead of guessing.
+                cursor = None
 
             try:
                 meter_result, cursor = await self._fetch_meter_data(uuid, cursor, now)
@@ -148,6 +158,8 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
 
             if not meter_result.readings:
                 continue
+
+            self._record_obis_codes(uuid, meter_result.readings)
 
             if cursor is not None:
                 split = await self._detect_corrections(
@@ -246,6 +258,27 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
         self.hass.config_entries.async_update_entry(
             self.config_entry,
             data={**self.config_entry.data, CONF_CURSORS: cursors},
+        )
+
+    def _record_obis_codes(
+        self, meter_uuid: str, readings: list[dict[str, Any]]
+    ) -> None:
+        """Remember which OBIS codes a meter reports.
+
+        Sensor entities are built from this, so the set only ever grows: a page
+        that happens not to mention a code is no evidence the code is gone.
+        Recording an empty list is meaningful — it marks a meter that reports
+        readings without any OBIS code, which gets a single unqualified sensor.
+        """
+        seen = {r["obis_code"] for r in readings if r.get("obis_code")}
+        stored = dict(self.config_entry.data.get(CONF_OBIS_CODES, {}))
+        merged = sorted(set(stored.get(meter_uuid, [])) | seen)
+        if merged == stored.get(meter_uuid):
+            return
+        stored[meter_uuid] = merged
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, CONF_OBIS_CODES: stored},
         )
 
     def _persist_cursor(self, meter_uuid: str) -> None:

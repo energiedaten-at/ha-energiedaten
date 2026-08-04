@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EnergiedatenApiClient
@@ -87,6 +88,18 @@ async def async_setup_entry(
     entry.runtime_data = EnergiedatenData(
         coordinator=coordinator,
         client=client,
+    )
+
+    # The account device owns the refresh button and parents every meter. It is
+    # created here rather than from a platform so it exists before the meter
+    # devices name it in `via_device` — an unresolvable via_device is dropped.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="energiedaten.at",
+        manufacturer="energiedaten.at",
+        entry_type=dr.DeviceEntryType.SERVICE,
+        configuration_url="https://energiedaten.at",
     )
 
     if not hass.services.has_service(DOMAIN, "reimport"):

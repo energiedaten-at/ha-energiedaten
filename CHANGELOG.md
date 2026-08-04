@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-08-04
+
+### Breaking
+
+- The `data_quality` sensor attribute is now a label instead of an integer:
+  `measured` (1), `estimated` (2), `unreliable` (3). Templates and automations
+  comparing it to a number must be updated. Unrecognised codes are passed
+  through unchanged.
+
+### Fixed
+
+- Sensors are no longer dropped on restart. Entities were built from the last
+  poll's readings, but a cursor sync returns an empty page when nothing has
+  changed, so a restart at that point left the meter with no sensors and
+  registered a placeholder stuck at `unavailable`. OBIS codes are now stored
+  in the config entry under `obis_codes` and the sensor set is built from
+  those. Statistics were not affected. Leftover placeholders are removed on
+  the next start.
+
+- A meter with no stored OBIS codes does one full history read to discover
+  them, then resumes incremental sync.
+
+### Added
+
+- Service device for the account. Meter devices are linked to it via
+  `via_device`.
+
+### Changed
+
+- The refresh button is attached to the account device instead of having no
+  device. New installs get `button.energiedaten_at_refresh`. Existing installs
+  keep `button.refresh` so automations referencing it continue to work.
+
 ## [0.5.3] - 2026-08-04
 
 ### Fixed

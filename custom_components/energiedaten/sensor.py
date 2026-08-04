@@ -6,15 +6,16 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import Platform, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from . import EnergiedatenConfigEntry
-from .const import DOMAIN
+from .const import CONF_OBIS_CODES, DOMAIN
 from .coordinator import EnergiedatenCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,9 +32,49 @@ OBIS_LABELS: dict[str, str] = {
 }
 
 
+# The API sends data quality as an integer "for bandwidth efficiency"
+# (docs/technical/API.md). Grid operators revise readings upward over time:
+# a quarter-hour first arrives estimated (L2) and is later replaced by a
+# measured (L1) value, sometimes up to 60 days later.
+QUALITY_LABELS: dict[int, str] = {
+    1: "measured",
+    2: "estimated",
+    3: "unreliable",
+}
+
+
 def _obis_suffix(obis_code: str) -> str:
     """Extract the suffix from an OBIS code like '1-1:2.9.0 G.01' → 'G.01'."""
     return obis_code.rsplit(" ", 1)[-1] if " " in obis_code else obis_code
+
+
+def _quality_label(raw: Any) -> Any:
+    """Map a quality code to its label, leaving anything unrecognised alone.
+
+    An unknown code is passed through rather than flattened to "unknown", so a
+    quality level added upstream stays visible instead of silently looking like
+    missing data.
+    """
+    return QUALITY_LABELS.get(raw, raw) if isinstance(raw, int) else raw
+
+
+def _async_remove_stale_bare_sensor(
+    hass: HomeAssistant, entry: EnergiedatenConfigEntry, meter_uuid: str
+) -> None:
+    """Drop the unqualified sensor left behind before OBIS codes were recorded.
+
+    Earlier versions built the sensor set from whatever the last poll returned,
+    so restarting while the change feed was empty registered a sensor with no
+    OBIS code. It can never match a reading, so it sits at `unavailable`
+    forever — remove it now that the meter's real codes are known.
+    """
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        Platform.SENSOR, DOMAIN, f"{entry.entry_id}_{meter_uuid}"
+    )
+    if entity_id:
+        _LOGGER.debug("Removing stale OBIS-less sensor %s", entity_id)
+        registry.async_remove(entity_id)
 
 
 async def async_setup_entry(
@@ -43,26 +84,33 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensor entities from a config entry.
 
-    Creates one sensor per (meter, obis_code) combination discovered
-    in the coordinator's initial data fetch.
+    Creates one sensor per (meter, obis_code) combination the integration has
+    ever seen, not just the combinations present in the latest fetch.
     """
     coordinator = entry.runtime_data.coordinator
+    known_codes: dict[str, list[str]] = entry.data.get(CONF_OBIS_CODES, {})
     sensors: list[EnergiedatenSensor] = []
 
     for meter in entry.data["meters"]:
         uuid = meter["uuid"]
         readings = (coordinator.data or {}).get(uuid, [])
 
-        # Discover distinct OBIS codes from the data
-        obis_codes = sorted({r["obis_code"] for r in readings if "obis_code" in r})
+        # Codes recorded from every poll so far, union whatever this one holds.
+        # Reading only the current poll would drop every sensor on a restart
+        # that lands when the change feed has nothing new to report.
+        obis_codes = sorted(
+            set(known_codes.get(uuid, []))
+            | {r["obis_code"] for r in readings if r.get("obis_code")}
+        )
 
         if obis_codes:
+            _async_remove_stale_bare_sensor(hass, entry, uuid)
             for obis_code in obis_codes:
                 sensors.append(
                     EnergiedatenSensor(coordinator, entry, meter, obis_code)
                 )
         else:
-            # No OBIS code in data (or no data yet) — create a single sensor
+            # Meter reports no OBIS code, or has never returned data at all
             sensors.append(
                 EnergiedatenSensor(coordinator, entry, meter, None)
             )
@@ -115,6 +163,7 @@ class EnergiedatenSensor(
             manufacturer="energiedaten.at",
             model="Smart Meter",
             configuration_url="https://energiedaten.at",
+            via_device=(DOMAIN, entry.entry_id),
         )
         self._attr_extra_state_attributes: dict[str, Any] = {
             "metering_point": meter["metering_point"],
@@ -143,8 +192,8 @@ class EnergiedatenSensor(
 
         last = readings[-1]
         # Update dynamic attributes from latest reading
-        self._attr_extra_state_attributes["data_quality"] = last.get(
-            "quality", "unknown"
+        self._attr_extra_state_attributes["data_quality"] = _quality_label(
+            last.get("quality", "unknown")
         )
         self._attr_extra_state_attributes["last_data_at"] = last.get("timestamp_end")
 

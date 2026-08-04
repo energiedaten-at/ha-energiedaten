@@ -20,7 +20,7 @@ from custom_components.energiedaten.api import (
     MeterDataResult,
     RateLimitError,
 )
-from custom_components.energiedaten.const import DOMAIN
+from custom_components.energiedaten.const import CONF_OBIS_CODES, DOMAIN
 from custom_components.energiedaten.coordinator import (
     _HISTORY_START,
     EnergiedatenCoordinator,
@@ -82,6 +82,7 @@ async def test_incremental_fetch_sends_cursor_without_window(
                 }
             ],
             "cursors": {"m1": "Y3Vyc29yLTE"},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
         },
     )
     entry.add_to_hass(hass)
@@ -119,6 +120,7 @@ async def test_rejected_cursor_falls_back_to_window_read(
                 }
             ],
             "cursors": {"m1": "stale-cursor"},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
         },
     )
     entry.add_to_hass(hass)
@@ -232,6 +234,7 @@ async def test_normal_sync_anchors_sum_from_recorder(hass, mock_client):
                 }
             ],
             "cursors": {"m1": "Y3Vyc29yLXNlZWQ"},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
         },
     )
     entry.add_to_hass(hass)
@@ -327,6 +330,7 @@ async def test_correction_triggers_day_refetch(hass, mock_client):
                 }
             ],
             "cursors": {"m1": "Y3Vyc29yLXNlZWQ"},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
         },
     )
     entry.add_to_hass(hass)
@@ -395,3 +399,100 @@ async def test_correction_triggers_day_refetch(hass, mock_client):
     second_call = mock_client.async_get_meter_data.call_args_list[1]
     assert second_call.kwargs.get("cursor") is None
     assert len(second_call.args) == 3  # uuid, from_dt, to_dt
+
+
+async def test_discovered_obis_codes_are_persisted(coordinator, mock_client):
+    """OBIS codes seen in readings are recorded so sensors survive a restart."""
+    mock_client.async_get_meter_data.return_value = MeterDataResult(
+        readings=[
+            {
+                "timestamp": "2026-03-15T14:00:00+00:00",
+                "timestamp_end": "2026-03-15T14:15:00+00:00",
+                "value": 0.3,
+                "obis_code": "1-1:1.9.0 G.01",
+            },
+            {
+                "timestamp": "2026-03-15T14:00:00+00:00",
+                "timestamp_end": "2026-03-15T14:15:00+00:00",
+                "value": 0.1,
+                "obis_code": "1-1:1.9.0 P.01",
+            },
+        ],
+        next_cursor="Y3Vyc29yLTE",
+    )
+
+    with patch(
+        "custom_components.energiedaten.coordinator.async_add_external_statistics"
+    ):
+        await coordinator._async_update_data()
+
+    stored = coordinator.config_entry.data[CONF_OBIS_CODES]["meter-1"]
+    assert sorted(stored) == ["1-1:1.9.0 G.01", "1-1:1.9.0 P.01"]
+
+
+async def test_meter_with_unknown_obis_codes_does_a_window_read(
+    hass: HomeAssistant, mock_client
+):
+    """An entry upgraded mid-flight has a cursor but no recorded OBIS codes.
+
+    A cursor read returns nothing when nothing changed, which would leave the
+    codes undiscovered indefinitely. One window read repopulates them; existing
+    statistics are overwritten in place, not duplicated.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "token": "t",
+            "meters": [
+                {
+                    "uuid": "m1",
+                    "metering_point": "AT...",
+                    "energy_direction": "consumption",
+                    "label": "X",
+                }
+            ],
+            "cursors": {"m1": "Y3Vyc29yLTE"},
+        },
+    )
+    entry.add_to_hass(hass)
+    coord = EnergiedatenCoordinator(hass, entry, mock_client)
+
+    with patch(
+        "custom_components.energiedaten.coordinator.async_add_external_statistics"
+    ):
+        await coord._async_update_data()
+
+    call = mock_client.async_get_meter_data.call_args
+    assert call.kwargs.get("cursor") is None
+    assert call.args[1] == _HISTORY_START
+
+
+async def test_empty_poll_keeps_previously_discovered_codes(
+    hass: HomeAssistant, mock_client
+):
+    """A poll with no readings tells us nothing — it must not erase what we know."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "token": "t",
+            "meters": [
+                {
+                    "uuid": "m1",
+                    "metering_point": "AT...",
+                    "energy_direction": "consumption",
+                    "label": "X",
+                }
+            ],
+            "cursors": {"m1": "Y3Vyc29yLTE"},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
+        },
+    )
+    entry.add_to_hass(hass)
+    coord = EnergiedatenCoordinator(hass, entry, mock_client)
+
+    mock_client.async_get_meter_data.return_value = MeterDataResult(
+        readings=[], next_cursor=None
+    )
+    await coord._async_update_data()
+
+    assert entry.data[CONF_OBIS_CODES]["m1"] == ["1-1:1.9.0 G.01"]
