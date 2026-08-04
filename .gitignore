@@ -13,3 +13,8 @@ build/
 # Local planning / scratch (not shipped with the integration)
 docs/superpowers/
 .claude/
+
+# Local HA dev instance. .storage/ holds the real API key in cleartext and
+# home-assistant_v2.db holds the imported readings — neither belongs in git.
+.ha-dev-config/*
+!.ha-dev-config/configuration.yaml
