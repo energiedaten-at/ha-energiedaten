@@ -16,5 +16,5 @@ docs/superpowers/
 
 # Local HA dev instance. .storage/ holds the real API key in cleartext and
 # home-assistant_v2.db holds the imported readings — neither belongs in git.
-.ha-dev-config/*
-!.ha-dev-config/configuration.yaml
+.ha-dev-config/
+docker-compose.dev.yml
