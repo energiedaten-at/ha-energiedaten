@@ -6,4 +6,4 @@ DOMAIN: Final = "energiedaten"
 
 CONF_TOKEN: Final = "token"
 CONF_METERS: Final = "meters"
-CONF_WATERMARKS: Final = "watermarks"
+CONF_CURSORS: Final = "cursors"

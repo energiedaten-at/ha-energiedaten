@@ -108,7 +108,7 @@ Sensor attributes:
 
 ### Services
 
-- **`energiedaten.reimport`**: clears sync watermarks and re-fetches all historical meter data. Existing statistics are overwritten, not duplicated. Call it from **Developer Tools → Services**.
+- **`energiedaten.reimport`**: resets sync progress and re-fetches all historical meter data. Existing statistics are overwritten, not duplicated. Call it from **Developer Tools → Services**.
 
 ## How It Works
 
@@ -141,7 +141,7 @@ If rate-limited, the integration logs a warning and retries on the next polling 
 - The team-slug field is gone; the team is now derived from your API key. Existing setups are migrated on first load, with no user action required.
 
 **Want to re-import all data?**
-- Use the `energiedaten.reimport` service in **Developer Tools → Services**. This clears watermarks and triggers a full re-fetch.
+- Use the `energiedaten.reimport` service in **Developer Tools → Services**. This resets sync progress and triggers a full re-fetch.
 
 **Re-authentication required?**
 - Your API key may have expired (Community plan caps at 365 days). See the [API quickstart](https://energiedaten.at/docs/api#tag/quickstart) for how to create a new one.

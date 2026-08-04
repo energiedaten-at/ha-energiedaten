@@ -1,6 +1,6 @@
 [project]
 name = "ha-energiedaten"
-version = "0.5.2"
+version = "0.5.3"
 description = "Home Assistant integration for energiedaten.at"
 license = "MIT"
 requires-python = ">=3.13"

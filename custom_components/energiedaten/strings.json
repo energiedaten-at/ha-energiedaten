@@ -35,7 +35,7 @@
   "services": {
     "reimport": {
       "name": "Re-import data",
-      "description": "Clear sync watermarks and re-fetch all historical meter data from energiedaten.at. Existing statistics are overwritten, not duplicated."
+      "description": "Reset sync progress and re-fetch all historical meter data from energiedaten.at. Existing statistics are overwritten, not duplicated."
     }
   }
 }

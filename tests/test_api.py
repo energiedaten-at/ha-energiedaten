@@ -11,7 +11,7 @@ import pytest
 from custom_components.energiedaten.api import (
     AuthenticationError,
     EnergiedatenApiClient,
-    MeterDataResult,
+    InvalidRequestError,
     RateLimitError,
 )
 
@@ -48,26 +48,23 @@ def client(mock_session: AsyncMock) -> EnergiedatenApiClient:
 # --- async_validate ---
 
 
-async def test_validate_success(client, mock_session):
+async def test_validate_sends_authenticated_request_to_canonical_url(
+    client, mock_session
+):
+    """Bearer key against /api/v1 with no /teams/{slug} segment."""
     mock_session.get.return_value = _mock_response(200, {"data": []})
+
     assert await client.async_validate() is True
 
-
-async def test_validate_auth_error(client, mock_session):
-    mock_session.get.return_value = _mock_response(401)
-    with pytest.raises(AuthenticationError):
-        await client.async_validate()
+    call = mock_session.get.call_args
+    assert call.args[0] == "https://energiedaten.at/api/v1/smart-meters"
+    assert call.kwargs["headers"]["Authorization"] == "Bearer test-token"
 
 
-async def test_validate_forbidden(client, mock_session):
-    mock_session.get.return_value = _mock_response(403)
-    with pytest.raises(AuthenticationError):
-        await client.async_validate()
-
-
-async def test_validate_404_is_auth_error(client, mock_session):
+@pytest.mark.parametrize("status", [401, 403, 404])
+async def test_validate_rejects_bad_key(client, mock_session, status):
     """A 404 on /smart-meters has no team-route meaning anymore — treat as auth."""
-    mock_session.get.return_value = _mock_response(404)
+    mock_session.get.return_value = _mock_response(status)
     with pytest.raises(AuthenticationError):
         await client.async_validate()
 
@@ -75,21 +72,22 @@ async def test_validate_404_is_auth_error(client, mock_session):
 # --- async_get_meters ---
 
 
-async def test_get_meters_returns_list(client, mock_session):
+async def test_get_meters_unwraps_data_envelope(client, mock_session):
     meters = [
         {"id": "m1", "metering_point_number": "AT003...", "status": "connected"},
         {"id": "m2", "metering_point_number": "AT003...", "status": "pending"},
     ]
     mock_session.get.return_value = _mock_response(200, {"data": meters})
-    result = await client.async_get_meters()
-    assert result == meters
-    assert len(result) == 2
+    assert await client.async_get_meters() == meters
 
 
 # --- async_get_meter_data ---
 
 
-async def test_get_meter_data_single_page(client, mock_session):
+async def test_window_read_sends_window_params_and_returns_cursor(
+    client, mock_session
+):
+    """A first sync reads a `from`/`to` window and keeps the resume cursor."""
     readings = [
         {"timestamp": "2026-03-15T14:00:00Z", "timestamp_end": "2026-03-15T14:15:00Z", "value": 0.3},
     ]
@@ -99,28 +97,36 @@ async def test_get_meter_data_single_page(client, mock_session):
             "object": "data_window",
             "data": readings,
             "is_truncated": False,
-            "max_updated_at": "2026-03-15T15:00:00+00:00",
+            "next_cursor": "Y3Vyc29yLTE",
         },
     )
-    result = await client.async_get_meter_data(
-        "m1",
-        datetime(2026, 3, 15, tzinfo=timezone.utc),
-        datetime(2026, 3, 16, tzinfo=timezone.utc),
-    )
-    assert isinstance(result, MeterDataResult)
+    from_dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
+    to_dt = datetime(2026, 3, 16, tzinfo=timezone.utc)
+
+    result = await client.async_get_meter_data("m1", from_dt, to_dt)
+
+    assert mock_session.get.call_args.kwargs["params"] == {
+        "from": from_dt.isoformat(),
+        "to": to_dt.isoformat(),
+        "order": "asc",
+    }
     assert result.readings == readings
-    assert result.max_updated_at == "2026-03-15T15:00:00+00:00"
+    assert result.next_cursor == "Y3Vyc29yLTE"
 
 
-async def test_get_meter_data_pagination(client, mock_session):
-    """When is_truncated=true, the client re-requests with updated_since=max_updated_at."""
+async def test_truncated_window_read_resumes_with_next_cursor(client, mock_session):
+    """is_truncated=true must resume via next_cursor, dropping the window params.
+
+    This is the documented "backfill then tail" bridge: the window read pins a
+    low watermark, and the cursor follow-up drains the rest.
+    """
     page1 = _mock_response(
         200,
         {
             "object": "data_window",
             "data": [{"timestamp": "2026-03-15T14:00:00Z", "value": 0.3}],
             "is_truncated": True,
-            "max_updated_at": "2026-03-15T15:00:00+00:00",
+            "next_cursor": "Y3Vyc29yLTE",
         },
     )
     page2 = _mock_response(
@@ -129,7 +135,7 @@ async def test_get_meter_data_pagination(client, mock_session):
             "object": "data_window",
             "data": [{"timestamp": "2026-03-15T14:15:00Z", "value": 0.4}],
             "is_truncated": False,
-            "max_updated_at": "2026-03-15T15:15:00+00:00",
+            "next_cursor": "Y3Vyc29yLTI",
         },
     )
     mock_session.get.side_effect = [page1, page2]
@@ -141,14 +147,23 @@ async def test_get_meter_data_pagination(client, mock_session):
     )
 
     assert len(result.readings) == 2
-    assert result.max_updated_at == "2026-03-15T15:15:00+00:00"
+    assert result.next_cursor == "Y3Vyc29yLTI"
     assert mock_session.get.call_count == 2
+    assert mock_session.get.call_args_list[1].kwargs["params"] == {
+        "cursor": "Y3Vyc29yLTE"
+    }
 
-    second_call_params = mock_session.get.call_args_list[1].kwargs["params"]
-    assert second_call_params["updated_since"] == "2026-03-15T15:00:00+00:00"
-    assert "order" not in second_call_params  # server forces ASC when updated_since is set
-    assert "cursor" not in second_call_params
-    assert "limit" not in second_call_params
+
+@pytest.mark.parametrize("status", [400, 422])
+async def test_rejected_request_raises_invalid_request(client, mock_session, status):
+    """400/422 mean the server rejected our params — surface it as its own type.
+
+    A malformed or stale cursor lands here, and the caller needs to tell it
+    apart from a transport error to recover by dropping the cursor.
+    """
+    mock_session.get.return_value = _mock_response(status)
+    with pytest.raises(InvalidRequestError):
+        await client.async_get_meter_data("m1", cursor="stale")
 
 
 async def test_get_meter_data_rate_limited(client, mock_session):
@@ -161,43 +176,24 @@ async def test_get_meter_data_rate_limited(client, mock_session):
         )
 
 
-async def test_get_meter_data_sends_correct_params(client, mock_session):
+async def test_sync_read_sends_cursor_alone(client, mock_session):
+    """A cursor resume must send `cursor` and nothing else.
+
+    `from`/`to` filter by `timestamp` even in cursor mode, which would clip out
+    the late grid-operator revisions the change feed exists to deliver.
+    """
     mock_session.get.return_value = _mock_response(
         200,
         {"object": "data_window", "data": [], "is_truncated": False},
     )
-    from_dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
-    to_dt = datetime(2026, 3, 16, tzinfo=timezone.utc)
-    await client.async_get_meter_data("m1", from_dt, to_dt)
+    await client.async_get_meter_data("m1", cursor="eyJ1IjoiMjAyNi0w")
 
     params = mock_session.get.call_args.kwargs["params"]
-    assert params["from"] == from_dt.isoformat()
-    assert params["to"] == to_dt.isoformat()
-    assert params["order"] == "asc"
-    assert "limit" not in params           # MeterDataRequest rejects it
-    assert "cursor" not in params          # legacy pagination
-    assert "updated_since" not in params   # not supplied on entry
+    assert params == {"cursor": "eyJ1IjoiMjAyNi0w"}
 
 
-async def test_get_meter_data_sends_updated_since(client, mock_session):
-    """When updated_since is provided, it should be sent and `order` should be omitted."""
-    mock_session.get.return_value = _mock_response(
-        200,
-        {"object": "data_window", "data": [], "is_truncated": False},
-    )
-    from_dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
-    to_dt = datetime(2026, 3, 16, tzinfo=timezone.utc)
-    await client.async_get_meter_data(
-        "m1", from_dt, to_dt, updated_since="2026-03-15T12:00:00+00:00"
-    )
-
-    params = mock_session.get.call_args.kwargs["params"]
-    assert params["updated_since"] == "2026-03-15T12:00:00+00:00"
-    assert "order" not in params
-
-
-async def test_get_meter_data_empty_response_has_no_watermark(client, mock_session):
-    """Empty response without max_updated_at should return None watermark."""
+async def test_empty_response_yields_no_cursor(client, mock_session):
+    """The server omits next_cursor when data is empty — callers keep their own."""
     mock_session.get.return_value = _mock_response(
         200,
         {"object": "data_window", "data": [], "is_truncated": False},
@@ -208,20 +204,4 @@ async def test_get_meter_data_empty_response_has_no_watermark(client, mock_sessi
         datetime(2026, 3, 16, tzinfo=timezone.utc),
     )
     assert result.readings == []
-    assert result.max_updated_at is None
-
-
-async def test_validate_sends_auth_header(client, mock_session):
-    mock_session.get.return_value = _mock_response(200, {"data": []})
-    await client.async_validate()
-    call_kwargs = mock_session.get.call_args
-    headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
-    assert headers["Authorization"] == "Bearer test-token"
-
-
-async def test_client_uses_canonical_base_url(client, mock_session):
-    """Base URL must be /api/v1 with no /teams/{slug} segment."""
-    mock_session.get.return_value = _mock_response(200, {"data": []})
-    await client.async_validate()
-    called_url = mock_session.get.call_args.args[0]
-    assert called_url == "https://energiedaten.at/api/v1/smart-meters"
+    assert result.next_cursor is None

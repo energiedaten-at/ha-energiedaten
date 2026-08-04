@@ -10,12 +10,13 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import EnergiedatenApiClient
-from .const import CONF_TOKEN, CONF_WATERMARKS, DOMAIN
+from .const import CONF_CURSORS, CONF_TOKEN, DOMAIN
 from .coordinator import EnergiedatenCoordinator
 
-# Legacy key from <v3 config entries — kept here as a literal so const.py
-# doesn't have to retain the constant. Used only by async_migrate_entry.
+# Legacy keys from older config entries — kept here as literals so const.py
+# doesn't have to retain the constants. Used only by async_migrate_entry.
 _LEGACY_TEAM_SLUG_KEY = "team_slug"
+_LEGACY_WATERMARKS_KEY = "watermarks"
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON]
 
@@ -40,21 +41,30 @@ async def async_migrate_entry(
         # v2: statistics moved from homeassistant-historical-sensor to
         # async_add_external_statistics with new statistic IDs.
         # Clear watermarks so the first sync re-fetches all history.
-        new_data = {k: v for k, v in entry.data.items() if k != CONF_WATERMARKS}
+        new_data = {
+            k: v for k, v in entry.data.items() if k != _LEGACY_WATERMARKS_KEY
+        }
         hass.config_entries.async_update_entry(entry, data=new_data, version=2)
     if entry.version < 3:
         # v3: team is derived from the API key; the `team_slug` field is
         # no longer collected or used. Strip it from existing entries.
-        # Watermarks stay: new `updated_since` pagination uses identical semantics.
         new_data = {k: v for k, v in entry.data.items() if k != _LEGACY_TEAM_SLUG_KEY}
         hass.config_entries.async_update_entry(entry, data=new_data, version=3)
+    if entry.version < 4:
+        # v4: the API dropped `updated_since` for an opaque `cursor`. Stored
+        # watermarks are timestamps, not cursors, so they can't be carried
+        # over — drop them and let the next sync do a fresh window read.
+        new_data = {
+            k: v for k, v in entry.data.items() if k != _LEGACY_WATERMARKS_KEY
+        }
+        hass.config_entries.async_update_entry(entry, data=new_data, version=4)
     return True
 
 
 async def _async_handle_reimport(hass: HomeAssistant, _call: ServiceCall) -> None:
     """Handle the reimport service call."""
     for entry in hass.config_entries.async_entries(DOMAIN):
-        new_data = {k: v for k, v in entry.data.items() if k != CONF_WATERMARKS}
+        new_data = {k: v for k, v in entry.data.items() if k != CONF_CURSORS}
         hass.config_entries.async_update_entry(entry, data=new_data)
         if entry.runtime_data:
             await entry.runtime_data.coordinator.async_request_refresh()

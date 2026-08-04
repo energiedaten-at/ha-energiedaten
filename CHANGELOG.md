@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-08-04
+
+### Fixed
+
+- **Incremental sync no longer fails after the first import** ([#3]). The API
+  removed the `updated_since` parameter on 2026-05-21 in favour of an opaque
+  `cursor`, and rejects it outright — so every poll after the first import
+  failed and dropped the entry into "Failed setup, will retry". The
+  integration now resumes via `next_cursor`. This affected every plan, not
+  just Community; remove/re-add only helped because it cleared the stored
+  value, buying exactly one more successful import.
+
+  The server rejects the old parameter two different ways, and both are now
+  handled: `400 bad_request` ("Either from+to or cursor is required") when
+  `updated_since` is sent alone, and `422 validation_failed` ("Updated since
+  ist unzulässig") when it accompanies `from`/`to`.
+
+- A cursor the server rejects is now discarded and the sync falls back to a
+  full history read, so a corrupted resume token can't wedge the integration
+  until someone re-adds it by hand.
+
+### Changed
+
+- Config-entry schema v3 → v4. Stored `watermarks` held timestamps, which are
+  not valid cursors, so they are dropped on upgrade. **The first poll after
+  updating does a full history read** — expect one larger-than-usual request
+  per meter, after which sync resumes incrementally. Existing statistics are
+  overwritten in place, not duplicated.
+
+- Page-cap pagination follows `next_cursor` instead of `updated_since`, so
+  first imports larger than the server's 50 000-record cap complete correctly.
+
+[#3]: https://github.com/energiedaten-at/ha-energiedaten/issues/3
+
 ## [0.5.2] - 2026-05-25
 
 ### Added

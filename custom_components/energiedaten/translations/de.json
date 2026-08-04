@@ -35,7 +35,7 @@
   "services": {
     "reimport": {
       "name": "Daten neu importieren",
-      "description": "Synchronisierungs-Wasserzeichen löschen und alle historischen Zählerdaten von energiedaten.at neu abrufen. Bestehende Statistiken werden überschrieben, nicht dupliziert."
+      "description": "Synchronisierungsstand zurücksetzen und alle historischen Zählerdaten von energiedaten.at neu abrufen. Bestehende Statistiken werden überschrieben, nicht dupliziert."
     }
   }
 }

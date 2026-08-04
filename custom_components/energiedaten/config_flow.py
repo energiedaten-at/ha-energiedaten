@@ -45,7 +45,7 @@ STEP_USER_SCHEMA = vol.Schema(
 class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
     """Config flow for energiedaten.at integration."""
 
-    VERSION = 3
+    VERSION = 4
 
     def __init__(self) -> None:
         """Initialize flow state."""
@@ -104,7 +104,7 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
                 if m["id"] in selected_uuids
             ]
             if self.source == SOURCE_RECONFIGURE:
-                # data_updates merges with entry.data, preserving watermarks.
+                # data_updates merges with entry.data, preserving sync cursors.
                 return self.async_update_reload_and_abort(
                     self._get_reconfigure_entry(),
                     data_updates={

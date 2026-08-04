@@ -27,8 +27,14 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .api import AuthenticationError, EnergiedatenApiClient, RateLimitError
-from .const import CONF_METERS, CONF_WATERMARKS, DOMAIN
+from .api import (
+    AuthenticationError,
+    EnergiedatenApiClient,
+    InvalidRequestError,
+    MeterDataResult,
+    RateLimitError,
+)
+from .const import CONF_CURSORS, CONF_METERS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,41 +120,36 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             update_interval=timedelta(hours=6),
         )
         self.client = client
-        self._pending_watermarks: dict[str, str] = {}
+        self._pending_cursors: dict[str, str] = {}
 
     async def _async_update_data(self) -> dict[str, list[dict[str, Any]]]:
         """Fetch new readings for each meter and write statistics."""
         meters = self.config_entry.data.get(CONF_METERS, [])
-        watermarks: dict[str, str] = dict(
-            self.config_entry.data.get(CONF_WATERMARKS, {})
-        )
+        cursors: dict[str, str] = dict(self.config_entry.data.get(CONF_CURSORS, {}))
         now = datetime.now(timezone.utc)
         result: dict[str, list[dict[str, Any]]] = {}
-        self._pending_watermarks = {}
+        self._pending_cursors = {}
 
         for meter in meters:
             uuid = meter["uuid"]
             metering_point = meter["metering_point"]
-            has_watermark = uuid in watermarks
+            cursor = cursors.get(uuid)
 
             try:
-                meter_result = await self.client.async_get_meter_data(
-                    uuid,
-                    _HISTORY_START,
-                    now,
-                    updated_since=watermarks.get(uuid),
-                )
+                meter_result, cursor = await self._fetch_meter_data(uuid, cursor, now)
             except AuthenticationError as err:
                 raise ConfigEntryAuthFailed from err
             except RateLimitError as err:
                 raise UpdateFailed("Rate limited, will retry next cycle") from err
+            except InvalidRequestError as err:
+                raise UpdateFailed(f"Server rejected the data request: {err}") from err
 
             result[uuid] = meter_result.readings
 
             if not meter_result.readings:
                 continue
 
-            if has_watermark:
+            if cursor is not None:
                 split = await self._detect_corrections(
                     meter_result.readings, metering_point
                 )
@@ -173,12 +174,49 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
                     meter_result.readings, metering_point, anchor_from_recorder=False
                 )
 
-            # Only advance watermark after successful statistics write
-            if meter_result.max_updated_at:
-                self._pending_watermarks[uuid] = meter_result.max_updated_at
-                self._persist_watermark(uuid)
+            # Only advance the cursor after a successful statistics write.
+            # A null next_cursor means the page was empty — keep the old one.
+            if meter_result.next_cursor:
+                self._pending_cursors[uuid] = meter_result.next_cursor
+                self._persist_cursor(uuid)
 
         return result
+
+    async def _fetch_meter_data(
+        self, meter_uuid: str, cursor: str | None, now: datetime
+    ) -> tuple[MeterDataResult, str | None]:
+        """Fetch one meter's data, returning the result and the cursor used.
+
+        The returned cursor is None when this was a window read — either the
+        first sync, or a fallback after the server rejected a stored cursor.
+        Callers use it to decide between the correction-detection path and the
+        anchor-at-zero first-sync path.
+        """
+        if cursor is None:
+            # Window read over all history. Its next_cursor bridges us into
+            # the change feed from here on.
+            return await self.client.async_get_meter_data(
+                meter_uuid, _HISTORY_START, now
+            ), None
+
+        # Sync read: cursor alone. Adding from/to would filter the change feed
+        # by timestamp and drop exactly the late revisions it exists to deliver.
+        try:
+            return await self.client.async_get_meter_data(
+                meter_uuid, cursor=cursor
+            ), cursor
+        except InvalidRequestError:
+            # The server won't take this cursor. Retrying it every cycle would
+            # wedge the entry, so drop it and rebuild from a window read.
+            _LOGGER.warning(
+                "Sync cursor for meter %s was rejected; "
+                "falling back to a full history read",
+                meter_uuid,
+            )
+            self._forget_cursor(meter_uuid)
+            return await self.client.async_get_meter_data(
+                meter_uuid, _HISTORY_START, now
+            ), None
 
     async def _get_last_sum_row(self, statistic_id: str) -> dict | None:
         """Query recorder for the latest statistic row (start + sum)."""
@@ -200,18 +238,26 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         )
 
-    def _persist_watermark(self, meter_uuid: str) -> None:
-        """Persist the delta-sync watermark for a meter."""
-        watermark = self._pending_watermarks.get(meter_uuid)
-        if not watermark:
+    def _forget_cursor(self, meter_uuid: str) -> None:
+        """Drop a rejected cursor so the next poll starts from a window read."""
+        cursors = dict(self.config_entry.data.get(CONF_CURSORS, {}))
+        if cursors.pop(meter_uuid, None) is None:
             return
-        watermarks = dict(
-            self.config_entry.data.get(CONF_WATERMARKS, {})
-        )
-        watermarks[meter_uuid] = watermark
         self.hass.config_entries.async_update_entry(
             self.config_entry,
-            data={**self.config_entry.data, CONF_WATERMARKS: watermarks},
+            data={**self.config_entry.data, CONF_CURSORS: cursors},
+        )
+
+    def _persist_cursor(self, meter_uuid: str) -> None:
+        """Persist the sync resume cursor for a meter."""
+        cursor = self._pending_cursors.get(meter_uuid)
+        if not cursor:
+            return
+        cursors = dict(self.config_entry.data.get(CONF_CURSORS, {}))
+        cursors[meter_uuid] = cursor
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, CONF_CURSORS: cursors},
         )
 
     async def _detect_corrections(

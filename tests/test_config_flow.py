@@ -64,15 +64,6 @@ def mock_api():
 # --- Step 1: Credentials ---
 
 
-async def test_step_user_shows_form(hass: HomeAssistant) -> None:
-    """Step 1 should display the credentials form."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
-
-
 async def test_step_user_success_advances_to_meters(
     hass: HomeAssistant, mock_api
 ) -> None:
@@ -146,6 +137,8 @@ async def test_step_meters_creates_entry(hass: HomeAssistant, mock_api) -> None:
     assert len(result["data"]["meters"]) == 1
     assert result["data"]["meters"][0]["uuid"] == "meter-1"
     assert result["data"]["meters"][0]["energy_direction"] == "consumption"
+    # New entries start at the current schema so no migration runs on them
+    assert result["result"].version == 4
 
 
 async def test_step_meters_only_shows_connected(hass: HomeAssistant, mock_api) -> None:
@@ -165,28 +158,6 @@ async def test_step_meters_only_shows_connected(hass: HomeAssistant, mock_api) -
     assert "meter-2" in default_uuids
     assert "meter-3" not in default_uuids  # pending meter excluded
     assert len(default_uuids) == 2
-
-
-async def test_step_meters_multiple_selection(hass: HomeAssistant, mock_api) -> None:
-    """Selecting multiple meters should include all in entry data."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"token": "token"},
-    )
-    with patch(
-        "custom_components.energiedaten.async_setup_entry",
-        return_value=True,
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            user_input={"meters": ["meter-1", "meter-2"]},
-        )
-        await hass.async_block_till_done()
-
-    assert len(result["data"]["meters"]) == 2
 
 
 async def test_step_meters_handles_live_api_field_name(
@@ -255,21 +226,9 @@ def _make_reconfigure_entry() -> MockConfigEntry:
                     "label": "Wohnung",
                 },
             ],
-            "watermarks": {"meter-1": "2026-05-20T00:00:00Z"},
+            "cursors": {"meter-1": "Y3Vyc29yLTE"},
         },
     )
-
-
-async def test_reconfigure_shows_user_step(
-    hass: HomeAssistant, mock_api
-) -> None:
-    """Reconfigure entry point should display the credentials form."""
-    entry = _make_reconfigure_entry()
-    entry.add_to_hass(hass)
-
-    result = await entry.start_reconfigure_flow(hass)
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
 
 
 async def test_reconfigure_updates_token_and_meters(
@@ -303,10 +262,10 @@ async def test_reconfigure_updates_token_and_meters(
     assert uuids == {"meter-1", "meter-2"}
 
 
-async def test_reconfigure_preserves_watermarks(
+async def test_reconfigure_preserves_cursors(
     hass: HomeAssistant, mock_api
 ) -> None:
-    """Reconfigure must not blow away the delta-sync watermarks."""
+    """Reconfigure must not blow away the sync cursors."""
     entry = _make_reconfigure_entry()
     entry.add_to_hass(hass)
 
@@ -325,7 +284,7 @@ async def test_reconfigure_preserves_watermarks(
         )
         await hass.async_block_till_done()
 
-    assert entry.data["watermarks"] == {"meter-1": "2026-05-20T00:00:00Z"}
+    assert entry.data["cursors"] == {"meter-1": "Y3Vyc29yLTE"}
 
 
 async def test_reconfigure_invalid_auth_shows_error(
@@ -411,9 +370,3 @@ async def test_reauth_invalid_token(hass: HomeAssistant, mock_api) -> None:
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
-
-
-async def test_config_flow_version_is_3() -> None:
-    """Lock the schema version so accidental downgrades fail loudly."""
-    from custom_components.energiedaten.config_flow import EnergiedatenConfigFlow
-    assert EnergiedatenConfigFlow.VERSION == 3

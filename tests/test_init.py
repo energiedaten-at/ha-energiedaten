@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 
@@ -12,43 +14,53 @@ from custom_components.energiedaten import async_migrate_entry
 from custom_components.energiedaten.const import DOMAIN
 
 
-async def test_migrate_v1_clears_watermarks_on_way_to_v3(hass: HomeAssistant):
-    """v1 entry: watermarks are cleared during v1→v2 and team_slug stripped during v2→v3."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=1,
-        data={
-            "token": "t",
-            "team_slug": "s",
-            "meters": [
-                {
-                    "uuid": "m1",
-                    "metering_point": "AT...",
-                    "energy_direction": "consumption",
-                    "label": "X",
-                }
-            ],
-            "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
-        },
-    )
+@pytest.mark.parametrize("start_version", [1, 2, 3])
+async def test_migration_ends_at_v4_without_legacy_keys(
+    hass: HomeAssistant, start_version: int
+):
+    """Every supported schema migrates to v4, dropping team_slug and watermarks.
+
+    `watermarks` held `updated_since` timestamps, which are not valid cursors —
+    carrying them over would send the very parameter the API now rejects. The
+    entry must fall back to a fresh window read instead.
+    """
+    data = {
+        "token": "t",
+        "meters": [
+            {
+                "uuid": "m1",
+                "metering_point": "AT...",
+                "energy_direction": "consumption",
+                "label": "X",
+            }
+        ],
+        "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
+    }
+    if start_version < 3:
+        # v3 is the step that strips it, so a genuine v3 entry never has one
+        data["team_slug"] = "mein-haushalt"
+
+    entry = MockConfigEntry(domain=DOMAIN, version=start_version, data=data)
     entry.add_to_hass(hass)
 
-    result = await async_migrate_entry(hass, entry)
+    assert await async_migrate_entry(hass, entry) is True
 
-    assert result is True
-    assert entry.version == 3
+    assert entry.version == 4
     assert "watermarks" not in entry.data
+    assert "cursors" not in entry.data
     assert "team_slug" not in entry.data
+    # Everything else survives untouched
     assert entry.data["token"] == "t"
+    assert entry.data["meters"][0]["uuid"] == "m1"
 
 
-async def test_reimport_service_clears_watermarks(
+async def test_reimport_service_clears_cursors(
     hass: HomeAssistant, mock_recorder_before_hass
 ):
-    """The reimport service should clear watermarks and trigger a refresh."""
+    """The reimport service should clear cursors and trigger a refresh."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        version=3,
+        version=4,
         data={
             "token": "t",
             "meters": [
@@ -59,7 +71,7 @@ async def test_reimport_service_clears_watermarks(
                     "label": "X",
                 }
             ],
-            "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
+            "cursors": {"m1": "Y3Vyc29yLTE"},
         },
     )
     entry.add_to_hass(hass)
@@ -76,92 +88,9 @@ async def test_reimport_service_clears_watermarks(
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-        assert "watermarks" in entry.data
+        assert "cursors" in entry.data
 
         await hass.services.async_call(DOMAIN, "reimport", blocking=True)
         await hass.async_block_till_done()
 
-    assert "watermarks" not in entry.data
-
-
-async def test_migrate_v1_without_watermarks(hass: HomeAssistant):
-    """Migration should work even if no watermarks exist yet."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=1,
-        data={
-            "token": "t",
-            "team_slug": "s",
-            "meters": [
-                {
-                    "uuid": "m1",
-                    "metering_point": "AT...",
-                    "energy_direction": "consumption",
-                    "label": "X",
-                }
-            ],
-        },
-    )
-    entry.add_to_hass(hass)
-
-    result = await async_migrate_entry(hass, entry)
-
-    assert result is True
-    assert entry.version == 3
-    assert "team_slug" not in entry.data
-
-
-async def test_migrate_v2_to_v3_strips_team_slug_preserves_watermarks(
-    hass: HomeAssistant,
-):
-    """v2→v3 removes team_slug but keeps watermarks intact."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=2,
-        data={
-            "token": "t",
-            "team_slug": "mein-haushalt",
-            "meters": [
-                {
-                    "uuid": "m1",
-                    "metering_point": "AT...",
-                    "energy_direction": "consumption",
-                    "label": "X",
-                }
-            ],
-            "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
-        },
-    )
-    entry.add_to_hass(hass)
-
-    result = await async_migrate_entry(hass, entry)
-
-    assert result is True
-    assert entry.version == 3
-    assert "team_slug" not in entry.data
-    assert entry.data["token"] == "t"
-    assert entry.data["meters"][0]["uuid"] == "m1"
-    # Watermarks survive — new pagination uses the same `updated_since` semantics
-    assert entry.data["watermarks"] == {"m1": "2026-03-15T14:30:00+00:00"}
-
-
-async def test_migrate_v1_to_v3_chains_both_steps(hass: HomeAssistant):
-    """A v1 entry should end up at v3 with no watermarks and no team_slug."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=1,
-        data={
-            "token": "t",
-            "team_slug": "mein-haushalt",
-            "meters": [],
-            "watermarks": {"m1": "2026-03-15T14:30:00+00:00"},
-        },
-    )
-    entry.add_to_hass(hass)
-
-    result = await async_migrate_entry(hass, entry)
-
-    assert result is True
-    assert entry.version == 3
-    assert "team_slug" not in entry.data
-    assert "watermarks" not in entry.data
+    assert "cursors" not in entry.data

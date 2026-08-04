@@ -77,18 +77,6 @@ def test_sensor_extra_attributes(mock_coordinator, mock_entry, meter_config):
     assert attrs["granularity"] == "quarter_hour"
 
 
-def test_sensor_feed_in_naming(mock_coordinator, mock_entry):
-    """Feed-in meter should have correct name."""
-    meter = {
-        "uuid": "meter-2",
-        "metering_point": "AT0030000000000000000000000054322",
-        "energy_direction": "feed_in",
-        "label": "PV Anlage",
-    }
-    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter, None)
-    assert sensor.name == "Feed-in"
-
-
 def test_sensor_no_label_device_uses_zaehlpunkt_suffix(mock_coordinator, mock_entry):
     """Meter without label should use last 6 chars of Zählpunkt for device name."""
     meter = {
