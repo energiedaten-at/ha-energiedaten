@@ -61,7 +61,7 @@ async def test_setup_registers_account_device_with_meters_beneath_it(
     """The config entry gets a service device that owns the button and meters.
 
     The account device has to exist in the registry before the meter devices
-    reference it via `via_device`, otherwise the link is silently dropped.
+    reference it, otherwise the link is silently dropped.
     """
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -90,15 +90,18 @@ async def test_setup_registers_account_device_with_meters_beneath_it(
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    registry = dr.async_get(hass)
+    # Looked up by config entry: `async_get_device` is deprecated from HA 2026.10
+    devices = {
+        identifier: device
+        for device in dr.async_entries_for_config_entry(
+            dr.async_get(hass), entry.entry_id
+        )
+        for _, identifier in device.identifiers
+    }
 
-    account = registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    assert account is not None
+    account = devices[entry.entry_id]
     assert account.entry_type is dr.DeviceEntryType.SERVICE
-
-    meter = registry.async_get_device(identifiers={(DOMAIN, "m1")})
-    assert meter is not None
-    assert meter.via_device_id == account.id
+    assert devices["m1"].via_device_id == account.id
 
     # The payoff: the button is no longer squatting on the global `button.refresh`
     assert hass.states.get("button.energiedaten_at_refresh") is not None

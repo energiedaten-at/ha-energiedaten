@@ -28,6 +28,7 @@ class EnergiedatenData:
 
     coordinator: EnergiedatenCoordinator
     client: EnergiedatenApiClient
+    account_device_id: str
 
 
 type EnergiedatenConfigEntry = ConfigEntry[EnergiedatenData]
@@ -85,21 +86,22 @@ async def async_setup_entry(
     coordinator = EnergiedatenCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
 
-    entry.runtime_data = EnergiedatenData(
-        coordinator=coordinator,
-        client=client,
-    )
-
     # The account device owns the refresh button and parents every meter. It is
     # created here rather than from a platform so it exists before the meter
-    # devices name it in `via_device` — an unresolvable via_device is dropped.
-    dr.async_get(hass).async_get_or_create(
+    # devices reference it — an unresolvable via device is dropped.
+    account_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.entry_id)},
         name="energiedaten.at",
         manufacturer="energiedaten.at",
         entry_type=dr.DeviceEntryType.SERVICE,
         configuration_url="https://energiedaten.at",
+    )
+
+    entry.runtime_data = EnergiedatenData(
+        coordinator=coordinator,
+        client=client,
+        account_device_id=account_device.id,
     )
 
     if not hass.services.has_service(DOMAIN, "reimport"):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -76,9 +76,29 @@ def test_sensor_device_info(mock_coordinator, mock_entry, meter_config):
 def test_meter_device_hangs_off_the_account_device(
     mock_coordinator, mock_entry, meter_config
 ):
-    """Meters are children of the account device, so HA nests them in the UI."""
-    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+    """Meters are children of the account device, so HA nests them in the UI.
+
+    From HA 2026.9 the identifier-based `via_device` is deprecated and raises
+    when core re-adds the entity (e.g. after an entity ID rename), so newer HA
+    gets the account device's registry id instead.
+    """
+    mock_entry.runtime_data.account_device_id = "account-device-id"
+    with patch("custom_components.energiedaten.sensor._HAS_VIA_DEVICE_ID", True):
+        sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+
+    assert sensor.device_info["via_device_id"] == "account-device-id"
+    assert "via_device" not in sensor.device_info
+
+
+def test_meter_device_uses_via_device_before_ha_2026_8(
+    mock_coordinator, mock_entry, meter_config
+):
+    """HA before 2026.8 has no `via_device_id`, so fall back to the identifier."""
+    with patch("custom_components.energiedaten.sensor._HAS_VIA_DEVICE_ID", False):
+        sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+
     assert sensor.device_info["via_device"] == (DOMAIN, "test-entry-id")
+    assert "via_device_id" not in sensor.device_info
 
 
 def test_sensor_extra_attributes(mock_coordinator, mock_entry, meter_config):
