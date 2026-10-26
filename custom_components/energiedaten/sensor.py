@@ -25,10 +25,11 @@ OBIS_LABELS: dict[str, str] = {
     "G.01": "Measured",
     "G.01T": "Measured (EC)",
     "G.02": "EC Generation Share",
-    "G.03": "Self-coverage (EC)",
+    "G.03": "Self-coverage",
     "G.03R": "Self-coverage Renewable",
     "P.01": "Grid",
     "P.01T": "Grid (EC)",
+    "X.01": "EC Feed-in Share",
 }
 
 

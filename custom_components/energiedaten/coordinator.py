@@ -50,12 +50,44 @@ _OBIS_STAT_NAMES: dict[str, str] = {
     "G.03R": "self_coverage_renewable",
     "P.01": "grid",
     "P.01T": "grid_ec",
+    "X.01": "ec_feed_in_share",
 }
 
 
 def _obis_suffix(obis_code: str) -> str:
     """Extract the suffix from an OBIS code like '1-1:2.9.0 G.01' → 'G.01'."""
     return obis_code.rsplit(" ", 1)[-1] if " " in obis_code else obis_code
+
+
+def _warn_on_suffix_collisions(meter_uuid: str, obis_codes: list[str]) -> None:
+    """Warn when two OBIS codes on one meter reduce to the same suffix.
+
+    Both the statistic ID and the sensor's unique ID key on the suffix alone,
+    discarding medium and register, so two codes sharing one collapse together:
+    their readings sum into a single cumulative total and only the first sensor
+    registers. Neither failure surfaces an error, and for a code already in
+    `_OBIS_STAT_NAMES` the merged series looks entirely legitimate.
+
+    The upstream vocabulary already contains such a pair — `1-1:1.9.0 G.01T`
+    and `1-1:2.9.0 G.01T` — held off the API only by a hand-maintained
+    exclusion list that nothing tests for completeness. A new code added
+    without a matching exclusion entry is the realistic way this arrives, so
+    say so in the log rather than merging quietly.
+    """
+    by_suffix: dict[str, str] = {}
+    for code in obis_codes:
+        suffix = _obis_suffix(code)
+        first = by_suffix.setdefault(suffix, code)
+        if first != code:
+            _LOGGER.warning(
+                "Meter %s reports both %s and %s, which share the OBIS suffix "
+                "%s: their statistics merge into one series and only one "
+                "sensor is registered",
+                meter_uuid,
+                first,
+                code,
+                suffix,
+            )
 
 
 def _hour_key(reading: dict[str, Any]) -> datetime:
@@ -273,6 +305,7 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
         seen = {r["obis_code"] for r in readings if r.get("obis_code")}
         stored = dict(self.config_entry.data.get(CONF_OBIS_CODES, {}))
         merged = sorted(set(stored.get(meter_uuid, [])) | seen)
+        _warn_on_suffix_collisions(meter_uuid, merged)
         if merged == stored.get(meter_uuid):
             return
         stored[meter_uuid] = merged
