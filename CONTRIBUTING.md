@@ -49,7 +49,6 @@ We welcome PRs! Here's how to get started:
 ### What's Out of Scope
 
 - Real-time power monitoring (not possible with EDA data)
-- Energy community data support (planned for a future version)
 - Cost tracking or tariff data
 - Features that require changes to the energiedaten.at API
 
