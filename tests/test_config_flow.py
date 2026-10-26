@@ -13,7 +13,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.energiedaten.api import AuthenticationError
-from custom_components.energiedaten.const import DOMAIN
+from custom_components.energiedaten.const import CONF_COMMUNITY_SHARE, DOMAIN
 
 MOCK_METERS = [
     {
@@ -370,3 +370,56 @@ async def test_reauth_invalid_token(hass: HomeAssistant, mock_api) -> None:
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+# --- Options ---
+
+
+async def _submit_options(hass: HomeAssistant, entry: MockConfigEntry, enabled: bool):
+    """Run the options flow once, with entry setup stubbed out."""
+    with patch(
+        "custom_components.energiedaten.async_setup_entry",
+        return_value=True,
+    ):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["step_id"] == "init"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_COMMUNITY_SHARE: enabled},
+        )
+        await hass.async_block_till_done()
+    return result
+
+
+async def test_enabling_community_share_drops_cursors(hass: HomeAssistant) -> None:
+    """The cursor only returns rows changed after it, never the share history.
+
+    Dropping it makes the reload start from a full history read, which is what
+    backfills the new statistics.
+    """
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+
+    result = await _submit_options(hass, entry, True)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_COMMUNITY_SHARE: True}
+    assert "cursors" not in entry.data
+    assert entry.data["token"] == "old-token"
+
+
+@pytest.mark.parametrize(("before", "after"), [(True, True), (True, False), (False, False)])
+async def test_options_keep_cursors_unless_newly_enabled(
+    hass: HomeAssistant, before: bool, after: bool
+) -> None:
+    """Saving without switching the option on must not force a full re-import."""
+    entry = _make_reconfigure_entry()
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_COMMUNITY_SHARE: before}
+    )
+
+    await _submit_options(hass, entry, after)
+
+    assert entry.options == {CONF_COMMUNITY_SHARE: after}
+    assert entry.data["cursors"] == {"meter-1": "Y3Vyc29yLTE"}

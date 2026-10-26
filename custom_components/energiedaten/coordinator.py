@@ -34,22 +34,32 @@ from .api import (
     MeterDataResult,
     RateLimitError,
 )
-from .const import CONF_CURSORS, CONF_METERS, CONF_OBIS_CODES, DOMAIN
+from .const import (
+    COMMUNITY_SHARE_OBIS_CODES,
+    CONF_COMMUNITY_SHARE,
+    CONF_CURSORS,
+    CONF_METERS,
+    CONF_OBIS_CODES,
+    DEFAULT_OBIS_CODES,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 # Far-past date for history import — API clamps to retention window
 _HISTORY_START = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
-# Human-readable labels for OBIS code suffixes (for statistic IDs)
+# Human-readable labels for OBIS code suffixes (for statistic IDs). HA cannot
+# rename a statistic ID, so an entry here is permanent once a release ships it.
 _OBIS_STAT_NAMES: dict[str, str] = {
     "G.01": "measured",
     "G.01T": "measured_ec",
     "G.02": "ec_generation_share",
-    "G.03": "self_coverage_ec",
+    "G.03": "community_share",
     "G.03R": "self_coverage_renewable",
     "P.01": "grid",
     "P.01T": "grid_ec",
+    "X.01": "community_share_generation",
 }
 
 
@@ -122,6 +132,13 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
         self.client = client
         self._pending_cursors: dict[str, str] = {}
 
+    @property
+    def _obis_codes(self) -> list[str] | None:
+        """OBIS codes to request, or None for the server's default vocabulary."""
+        if not self.config_entry.options.get(CONF_COMMUNITY_SHARE):
+            return None
+        return [*DEFAULT_OBIS_CODES, *COMMUNITY_SHARE_OBIS_CODES]
+
     async def _async_update_data(self) -> dict[str, list[dict[str, Any]]]:
         """Fetch new readings for each meter and write statistics."""
         meters = self.config_entry.data.get(CONF_METERS, [])
@@ -169,7 +186,10 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
                     # Re-fetch affected days
                     affected_days = self._affected_day_range(split["corrections"])
                     day_result = await self.client.async_get_meter_data(
-                        uuid, affected_days[0], affected_days[1]
+                        uuid,
+                        affected_days[0],
+                        affected_days[1],
+                        obis_codes=self._obis_codes,
                     )
                     await self._write_correction_statistics(
                         day_result.readings, metering_point
@@ -208,14 +228,14 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             # Window read over all history. Its next_cursor bridges us into
             # the change feed from here on.
             return await self.client.async_get_meter_data(
-                meter_uuid, _HISTORY_START, now
+                meter_uuid, _HISTORY_START, now, obis_codes=self._obis_codes
             ), None
 
         # Sync read: cursor alone. Adding from/to would filter the change feed
         # by timestamp and drop exactly the late revisions it exists to deliver.
         try:
             return await self.client.async_get_meter_data(
-                meter_uuid, cursor=cursor
+                meter_uuid, cursor=cursor, obis_codes=self._obis_codes
             ), cursor
         except InvalidRequestError:
             # The server won't take this cursor. Retrying it every cycle would
@@ -227,7 +247,7 @@ class EnergiedatenCoordinator(DataUpdateCoordinator[dict[str, list[dict[str, Any
             )
             self._forget_cursor(meter_uuid)
             return await self.client.async_get_meter_data(
-                meter_uuid, _HISTORY_START, now
+                meter_uuid, _HISTORY_START, now, obis_codes=self._obis_codes
             ), None
 
     async def _get_last_sum_row(self, statistic_id: str) -> dict | None:

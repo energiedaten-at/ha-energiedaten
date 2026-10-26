@@ -100,6 +100,7 @@ class EnergiedatenApiClient:
         from_dt: datetime | None = None,
         to_dt: datetime | None = None,
         cursor: str | None = None,
+        obis_codes: list[str] | None = None,
     ) -> MeterDataResult:
         """Get meter readings as either a window read or a cursor sync read.
 
@@ -117,6 +118,9 @@ class EnergiedatenApiClient:
         is true, resume with the response's `next_cursor` until the server
         reports `is_truncated=false`. The caller persists the final
         `next_cursor` to resume the next sync.
+
+        `obis_codes` replaces the server's default vocabulary when given. It is
+        a per-request filter, not part of the cursor, so every page repeats it.
         """
         readings: list[dict[str, Any]] = []
         if cursor is not None:
@@ -127,10 +131,15 @@ class EnergiedatenApiClient:
                 "to": to_dt.isoformat(),
                 "order": "asc",
             }
+        filters: dict[str, Any] = (
+            {"obis_codes[]": obis_codes} if obis_codes else {}
+        )
 
         next_cursor: str | None = None
         while True:
-            data = await self._get(f"/smart-meters/{meter_uuid}/data", params=params)
+            data = await self._get(
+                f"/smart-meters/{meter_uuid}/data", params={**params, **filters}
+            )
             readings.extend(data["data"])
             next_cursor = data.get("next_cursor") or next_cursor
 

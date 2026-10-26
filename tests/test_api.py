@@ -205,3 +205,32 @@ async def test_empty_response_yields_no_cursor(client, mock_session):
     )
     assert result.readings == []
     assert result.next_cursor is None
+
+
+async def test_obis_filter_is_sent_on_every_page(client, mock_session):
+    """`obis_codes[]` is a per-request filter, not part of the cursor.
+
+    A follow-up page sent with the cursor alone would fall back to the server's
+    default vocabulary and silently drop the community-share codes.
+    """
+    page1 = _mock_response(
+        200,
+        {"data": [{"timestamp": "2026-03-15T14:00:00Z"}], "is_truncated": True,
+         "next_cursor": "Y3Vyc29yLTE"},
+    )
+    page2 = _mock_response(
+        200, {"data": [], "is_truncated": False, "next_cursor": "Y3Vyc29yLTI"}
+    )
+    mock_session.get.side_effect = [page1, page2]
+    codes = ["1-1:1.9.0 P.01", "1-1:2.9.0 G.03"]
+
+    await client.async_get_meter_data(
+        "m1",
+        datetime(2026, 3, 15, tzinfo=timezone.utc),
+        datetime(2026, 3, 16, tzinfo=timezone.utc),
+        obis_codes=codes,
+    )
+
+    first, second = (c.kwargs["params"] for c in mock_session.get.call_args_list)
+    assert first["obis_codes[]"] == codes
+    assert second == {"cursor": "Y3Vyc29yLTE", "obis_codes[]": codes}

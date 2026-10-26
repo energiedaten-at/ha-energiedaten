@@ -20,11 +20,20 @@ from custom_components.energiedaten.api import (
     MeterDataResult,
     RateLimitError,
 )
-from custom_components.energiedaten.const import CONF_OBIS_CODES, DOMAIN
+from custom_components.energiedaten.const import (
+    COMMUNITY_SHARE_OBIS_CODES,
+    CONF_COMMUNITY_SHARE,
+    CONF_OBIS_CODES,
+    DEFAULT_OBIS_CODES,
+    DOMAIN,
+)
 from custom_components.energiedaten.coordinator import (
     _HISTORY_START,
     EnergiedatenCoordinator,
+    _statistic_id,
 )
+
+_SHARE_REQUEST = [*DEFAULT_OBIS_CODES, *COMMUNITY_SHARE_OBIS_CODES]
 
 
 @pytest.fixture
@@ -315,10 +324,19 @@ async def test_no_cursor_on_empty_response(coordinator, mock_client):
     assert "cursors" not in coordinator.config_entry.data
 
 
-async def test_correction_triggers_day_refetch(hass, mock_client):
-    """Records within already-imported hours should trigger day re-fetch."""
+@pytest.mark.parametrize(
+    ("options", "obis_codes"),
+    [({}, None), ({CONF_COMMUNITY_SHARE: True}, _SHARE_REQUEST)],
+)
+async def test_correction_triggers_day_refetch(hass, mock_client, options, obis_codes):
+    """Records within already-imported hours should trigger day re-fetch.
+
+    The re-fetch asks for the same codes as the sync read, or corrections to
+    the community-share legs would never reach their statistics.
+    """
     entry = MockConfigEntry(
         domain=DOMAIN,
+        options=options,
         data={
             "token": "t",
             "meters": [
@@ -399,6 +417,7 @@ async def test_correction_triggers_day_refetch(hass, mock_client):
     second_call = mock_client.async_get_meter_data.call_args_list[1]
     assert second_call.kwargs.get("cursor") is None
     assert len(second_call.args) == 3  # uuid, from_dt, to_dt
+    assert second_call.kwargs["obis_codes"] == obis_codes
 
 
 async def test_discovered_obis_codes_are_persisted(coordinator, mock_client):
@@ -496,3 +515,65 @@ async def test_empty_poll_keeps_previously_discovered_codes(
     await coord._async_update_data()
 
     assert entry.data[CONF_OBIS_CODES]["m1"] == ["1-1:1.9.0 G.01"]
+
+
+@pytest.mark.parametrize(
+    ("options", "obis_codes"),
+    [
+        ({}, None),
+        ({CONF_COMMUNITY_SHARE: False}, None),
+        ({CONF_COMMUNITY_SHARE: True}, _SHARE_REQUEST),
+    ],
+)
+@pytest.mark.parametrize("cursor", [None, "Y3Vyc29yLTE"])
+async def test_community_share_option_widens_the_request(
+    hass: HomeAssistant, mock_client, options, obis_codes, cursor
+):
+    """The share codes are requested only when the option is on.
+
+    Left off, the server's default vocabulary applies, which is what every
+    install received before the option existed.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options=options,
+        data={
+            "token": "t",
+            "meters": [
+                {
+                    "uuid": "m1",
+                    "metering_point": "AT...",
+                    "energy_direction": "consumption",
+                    "label": "X",
+                }
+            ],
+            "cursors": {"m1": cursor} if cursor else {},
+            CONF_OBIS_CODES: {"m1": ["1-1:1.9.0 G.01"]},
+        },
+    )
+    entry.add_to_hass(hass)
+    coord = EnergiedatenCoordinator(hass, entry, mock_client)
+
+    await coord._async_update_data()
+
+    call = mock_client.async_get_meter_data.call_args
+    assert call.kwargs.get("cursor") == cursor
+    assert call.kwargs["obis_codes"] == obis_codes
+
+
+@pytest.mark.parametrize(
+    ("obis_code", "name"),
+    [
+        ("1-1:2.9.0 G.03", "community_share"),
+        ("1-1:2.9.0 X.01", "community_share_generation"),
+    ],
+)
+def test_community_share_statistic_ids_are_named(obis_code, name):
+    """Both share codes get a named statistic ID, never the slugified fallback.
+
+    HA keys long-term statistics by ID and cannot rename them, so history
+    written under `_x_01` would stay there for good.
+    """
+    assert _statistic_id("AT0010000000000000000000000123456", obis_code) == (
+        f"energiedaten:at0010000000000000000000000123456_{name}"
+    )

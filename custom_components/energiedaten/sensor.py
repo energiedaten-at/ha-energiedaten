@@ -20,7 +20,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from . import EnergiedatenConfigEntry
-from .const import CONF_OBIS_CODES, DOMAIN
+from .const import (
+    COMMUNITY_SHARE_OBIS_CODES,
+    CONF_COMMUNITY_SHARE,
+    CONF_OBIS_CODES,
+    DOMAIN,
+)
 from .coordinator import EnergiedatenCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,10 +41,11 @@ OBIS_LABELS: dict[str, str] = {
     "G.01": "Measured",
     "G.01T": "Measured (EC)",
     "G.02": "EC Generation Share",
-    "G.03": "Self-coverage (EC)",
+    "G.03": "Community share",
     "G.03R": "Self-coverage Renewable",
     "P.01": "Grid",
     "P.01T": "Grid (EC)",
+    "X.01": "Community share",
 }
 
 
@@ -88,6 +94,26 @@ def _async_remove_stale_bare_sensor(
         registry.async_remove(entity_id)
 
 
+def _async_remove_community_share_sensors(
+    hass: HomeAssistant, entry: EnergiedatenConfigEntry, meter_uuid: str
+) -> None:
+    """Drop a meter's community-share sensors after the option is switched off.
+
+    Left in the registry they would sit at `unavailable` with nothing to
+    update them. Their statistics stay in the recorder, so switching the
+    option back on picks the history up again.
+    """
+    registry = er.async_get(hass)
+    for obis_code in COMMUNITY_SHARE_OBIS_CODES:
+        suffix = slugify(_obis_suffix(obis_code))
+        entity_id = registry.async_get_entity_id(
+            Platform.SENSOR, DOMAIN, f"{entry.entry_id}_{meter_uuid}_{suffix}"
+        )
+        if entity_id:
+            _LOGGER.debug("Removing community-share sensor %s", entity_id)
+            registry.async_remove(entity_id)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: EnergiedatenConfigEntry,
@@ -100,6 +126,7 @@ async def async_setup_entry(
     """
     coordinator = entry.runtime_data.coordinator
     known_codes: dict[str, list[str]] = entry.data.get(CONF_OBIS_CODES, {})
+    community_share = entry.options.get(CONF_COMMUNITY_SHARE, False)
     sensors: list[EnergiedatenSensor] = []
 
     for meter in entry.data["meters"]:
@@ -113,6 +140,12 @@ async def async_setup_entry(
             set(known_codes.get(uuid, []))
             | {r["obis_code"] for r in readings if r.get("obis_code")}
         )
+        if not community_share:
+            # Recorded while the option was on; kept so re-enabling restores them.
+            obis_codes = [
+                c for c in obis_codes if c not in COMMUNITY_SHARE_OBIS_CODES
+            ]
+            _async_remove_community_share_sensors(hass, entry, uuid)
 
         if obis_codes:
             _async_remove_stale_bare_sensor(hass, entry, uuid)
