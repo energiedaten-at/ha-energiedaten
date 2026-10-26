@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.6.1] - 2026-10-26
+## [0.7.0] - 2026-10-26
+
+### Added
+
+- Opt-in energy community sensors. Turn on **Energy community sensors** under
+  the integration's **Configure** to get a **Community share** sensor and
+  statistic per meter: energy drawn from your energy community on a
+  consumption meter (OBIS `G.03`), and energy fed into it on a feed-in meter
+  (`X.01`). Add them to the Energy Dashboard next to **Grid** to price
+  community energy separately. Turning the option on re-imports your history
+  once. Meters outside an energy community read 0, which is why the option is
+  off by default.
 
 ### Fixed
 

@@ -12,7 +12,11 @@ from homeassistant.const import Platform, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.energiedaten.const import CONF_OBIS_CODES, DOMAIN
+from custom_components.energiedaten.const import (
+    CONF_COMMUNITY_SHARE,
+    CONF_OBIS_CODES,
+    DOMAIN,
+)
 from custom_components.energiedaten.sensor import (
     EnergiedatenSensor,
     async_setup_entry,
@@ -345,3 +349,75 @@ async def test_bare_sensor_is_kept_when_no_obis_codes_are_known(
     await async_setup_entry(hass, entry, [].extend)
 
     assert registry.async_get(kept.entity_id) is not None
+
+
+_CONSUMPTION_WITH_SHARE = ["1-1:1.9.0 G.01", "1-1:1.9.0 P.01", "1-1:2.9.0 G.03"]
+
+
+def test_community_share_sensor_naming(mock_coordinator, mock_entry):
+    """Both share legs read "Community share"; the direction prefix tells them apart."""
+    feed_in = {
+        "uuid": "meter-2",
+        "metering_point": "AT0030000000000000000000000054322",
+        "energy_direction": "feed_in",
+        "label": "PV",
+    }
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, feed_in, "1-1:2.9.0 X.01")
+
+    assert sensor.name == "Feed-in Community share"
+    assert sensor.unique_id == "test-entry-id_meter-2_x_01"
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({CONF_COMMUNITY_SHARE: True}, _CONSUMPTION_WITH_SHARE),
+        ({}, ["1-1:1.9.0 G.01", "1-1:1.9.0 P.01"]),
+    ],
+)
+async def test_community_share_sensors_follow_the_option(
+    hass: HomeAssistant, mock_coordinator, meter_config, options, expected
+):
+    """Share codes recorded while the option was on get no sensor once it is off."""
+    entry = MagicMock()
+    entry.entry_id = "test-entry-id"
+    entry.options = options
+    entry.data = {
+        "meters": [meter_config],
+        CONF_OBIS_CODES: {"meter-1": _CONSUMPTION_WITH_SHARE},
+    }
+    mock_coordinator.data = {}
+    entry.runtime_data.coordinator = mock_coordinator
+
+    added: list[EnergiedatenSensor] = []
+    await async_setup_entry(hass, entry, added.extend)
+
+    assert sorted(s._obis_code for s in added) == expected
+
+
+async def test_switching_the_option_off_removes_share_sensors(
+    hass: HomeAssistant, mock_coordinator, meter_config
+):
+    """A share sensor left in the registry would sit at `unavailable` forever."""
+    registry = er.async_get(hass)
+    share = registry.async_get_or_create(
+        Platform.SENSOR, DOMAIN, "test-entry-id_meter-1_g_03"
+    )
+    grid = registry.async_get_or_create(
+        Platform.SENSOR, DOMAIN, "test-entry-id_meter-1_p_01"
+    )
+
+    entry = MagicMock()
+    entry.entry_id = "test-entry-id"
+    entry.options = {}
+    entry.data = {
+        "meters": [meter_config],
+        CONF_OBIS_CODES: {"meter-1": _CONSUMPTION_WITH_SHARE},
+    }
+    mock_coordinator.data = {}
+    entry.runtime_data.coordinator = mock_coordinator
+
+    await async_setup_entry(hass, entry, [].extend)
+
+    assert registry.async_get(share.entity_id) is None
+    assert registry.async_get(grid.entity_id) is not None

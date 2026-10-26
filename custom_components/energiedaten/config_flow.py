@@ -9,11 +9,15 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
+    ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    OptionsFlowWithReload,
 )
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -24,7 +28,13 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import AuthenticationError, EnergiedatenApiClient
-from .const import CONF_METERS, CONF_TOKEN, DOMAIN
+from .const import (
+    CONF_COMMUNITY_SHARE,
+    CONF_CURSORS,
+    CONF_METERS,
+    CONF_TOKEN,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +61,12 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize flow state."""
         self._token: str = ""
         self._meters: list[dict[str, Any]] = []
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> EnergiedatenOptionsFlow:
+        """Return the options flow handler."""
+        return EnergiedatenOptionsFlow()
 
     def _create_client(self, token: str) -> EnergiedatenApiClient:
         """Create an API client using HA's shared aiohttp session."""
@@ -209,4 +225,40 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+
+class EnergiedatenOptionsFlow(OptionsFlowWithReload):
+    """Options for energiedaten.at; saving reloads the entry."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Toggle the community-share sensors."""
+        enabled = self.config_entry.options.get(CONF_COMMUNITY_SHARE, False)
+
+        if user_input is not None:
+            if user_input[CONF_COMMUNITY_SHARE] and not enabled:
+                # A sync cursor only returns rows changed after it, so it would
+                # never deliver the share codes' history. Dropping the cursors
+                # makes the reload start from a full history read.
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        k: v
+                        for k, v in self.config_entry.data.items()
+                        if k != CONF_CURSORS
+                    },
+                )
+            return self.async_create_entry(data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_COMMUNITY_SHARE, default=enabled
+                    ): BooleanSelector(),
+                }
+            ),
         )

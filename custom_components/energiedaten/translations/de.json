@@ -32,6 +32,19 @@
       "reconfigure_successful": "Konfiguration aktualisiert"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Optionen",
+        "data": {
+          "community_share": "Energiegemeinschafts-Sensoren"
+        },
+        "data_description": {
+          "community_share": "Fügt je Zähler einen Sensor „Community share“ hinzu: Energie aus der Energiegemeinschaft (Bezug) bzw. an sie abgegeben (Einspeisung). Beim Einschalten wird die Historie einmal neu importiert. Zähler ohne Energiegemeinschaft zeigen 0."
+        }
+      }
+    }
+  },
   "services": {
     "reimport": {
       "name": "Daten neu importieren",

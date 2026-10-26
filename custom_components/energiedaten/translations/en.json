@@ -32,6 +32,19 @@
       "reconfigure_successful": "Configuration updated"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "community_share": "Energy community sensors"
+        },
+        "data_description": {
+          "community_share": "Adds a Community share sensor per meter: energy drawn from your energy community (consumption) or fed into it (feed-in). Turning this on re-imports your history once. Meters outside an energy community read 0."
+        }
+      }
+    }
+  },
   "services": {
     "reimport": {
       "name": "Re-import data",

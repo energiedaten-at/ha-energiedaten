@@ -35,6 +35,7 @@ This integration imports your Austrian smart meter energy data from [energiedate
 - **Re-import service** to re-fetch all historical data on demand (Developer Tools → Services)
 - **Correction detection**: when the grid operator re-sends corrected readings, affected days are automatically re-fetched
 - **Multi-meter support**: select which meters to import during setup
+- **Energy community sensors** (opt-in): energy drawn from and fed into your energy community, as their own Energy Dashboard sources
 - **Reauth support** for expired API tokens
 
 ## Requirements
@@ -76,19 +77,35 @@ Copy `custom_components/energiedaten/` into your Home Assistant `config/custom_c
 After installation, add your sensors to the Energy Dashboard:
 
 1. Go to **Settings → Dashboards → Energy**
-2. Add consumption sensors under **Grid consumption**
-3. Add feed-in sensors under **Return to grid**
+2. Add the consumption **Grid** sensor under **Grid consumption**
+3. Add the feed-in **Grid** sensor under **Return to grid**
+
+**Measured** is the meter's total. Leave it out of the dashboard when you add **Grid**, or the two are counted twice.
+
+### Energy community sensors
+
+If your meter belongs to an energy community (Energiegemeinschaft), you can import the community's share as separate sensors:
+
+1. Go to **Settings → Devices & Services → energiedaten.at → Configure**
+2. Turn on **Energy community sensors**
+
+Each meter gets a Community share sensor. On a consumption meter it is the energy you drew from the community, and on a feed-in meter the energy you fed into it. Grid plus Community share equals Measured. In the Energy Dashboard, add Community share as a second source beside Grid, under **Grid consumption** or **Return to grid**, and give it the community's price.
+
+Turning the option on re-imports your history once, which fills the community share back to the start of your plan's data retention. Turning it off removes the sensors; their statistics stay in the recorder.
 
 ## Entities
 
 ### Sensors
 
-One sensor per selected meter and OBIS code:
+One sensor per selected meter and OBIS code, on the meter's device:
 
-| Direction | Name Pattern | Example |
+| OBIS code | Consumption meter | Feed-in meter |
 |---|---|---|
-| Consumption | `{label} Consumption` | Wohnung Consumption |
-| Feed-in | `{label} Feed-in` | PV Anlage Feed-in |
+| `P.01` | Consumption Grid | Feed-in Grid |
+| `G.01` | Consumption Measured | Feed-in Measured |
+| `G.03` / `X.01` (opt-in) | Consumption Community share | Feed-in Community share |
+
+Home Assistant prefixes the device name, so a meter labelled Wohnung shows `Wohnung Consumption Grid`.
 
 Each sensor's state shows the latest quarter-hour reading in kWh. It also writes cumulative long-term statistics for the Energy Dashboard.
 
