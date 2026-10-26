@@ -6,7 +6,12 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import Platform, UnitOfEnergy
+from homeassistant.const import (
+    MAJOR_VERSION,
+    MINOR_VERSION,
+    Platform,
+    UnitOfEnergy,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -19,6 +24,12 @@ from .const import CONF_OBIS_CODES, DOMAIN
 from .coordinator import EnergiedatenCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# HA 2026.8 added `via_device_id`; from 2026.9 the identifier-based `via_device`
+# is deprecated (removed in 2027.8) and already raises when core re-adds the
+# entity, e.g. after an entity ID rename. Drop the fallback once the minimum
+# supported HA version reaches 2026.8.
+_HAS_VIA_DEVICE_ID = (MAJOR_VERSION, MINOR_VERSION) >= (2026, 8)
 
 # Human-readable labels for OBIS code suffixes
 OBIS_LABELS: dict[str, str] = {
@@ -163,8 +174,13 @@ class EnergiedatenSensor(
             manufacturer="energiedaten.at",
             model="Smart Meter",
             configuration_url="https://energiedaten.at",
-            via_device=(DOMAIN, entry.entry_id),
         )
+        if _HAS_VIA_DEVICE_ID:
+            self._attr_device_info["via_device_id"] = (
+                entry.runtime_data.account_device_id
+            )
+        else:
+            self._attr_device_info["via_device"] = (DOMAIN, entry.entry_id)
         self._attr_extra_state_attributes: dict[str, Any] = {
             "metering_point": meter["metering_point"],
             "energy_direction": direction,

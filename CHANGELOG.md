@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-10-26
+
+### Fixed
+
+- Renaming a sensor's entity ID no longer makes it disappear until the entry
+  is reloaded. Meter devices were linked to the account device through the
+  deprecated `via_device` parameter, which HA 2026.9+ warns about on every
+  start and rejects when it re-adds a renamed entity. On HA 2026.8 and later
+  the link now uses `via_device_id`; older versions keep `via_device`.
+  ([#4](https://github.com/energiedaten-at/ha-energiedaten/issues/4))
+
 ## [0.6.0] - 2026-08-04
 
 ### Breaking
