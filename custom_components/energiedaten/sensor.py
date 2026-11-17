@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 from typing import Any
 
@@ -20,7 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from . import EnergiedatenConfigEntry
 from .const import (
@@ -165,6 +166,14 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 
+def _parse_end(value: str) -> datetime:
+    return dt_util.parse_datetime(value) or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _reading_end(reading: dict[str, Any]) -> datetime:
+    return _parse_end(reading.get("timestamp_end") or "")
+
+
 class EnergiedatenSensor(
     CoordinatorEntity[EnergiedatenCoordinator],
     RestoreSensor,
@@ -251,14 +260,20 @@ class EnergiedatenSensor(
         else:
             readings = all_readings
 
-        if readings:
-            last = readings[-1]
+        # A cursor poll returns readings in revision order, so a late
+        # correction to an old day can come last. Take the newest by time, and
+        # never let it replace a newer reading the sensor already holds.
+        latest = max(readings, key=_reading_end, default=None)
+        held = self._attr_extra_state_attributes.get("last_data_at")
+        if latest is not None and (
+            held is None or _reading_end(latest) >= _parse_end(held)
+        ):
             self._attr_extra_state_attributes["data_quality"] = _quality_label(
-                last.get("quality", "unknown")
+                latest.get("quality", "unknown")
             )
-            self._attr_extra_state_attributes["last_data_at"] = last.get(
+            self._attr_extra_state_attributes["last_data_at"] = latest.get(
                 "timestamp_end"
             )
-            self._last_value = float(last["value"])
+            self._last_value = float(latest["value"])
 
         return self._last_value

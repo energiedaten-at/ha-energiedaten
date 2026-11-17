@@ -61,7 +61,7 @@ class EnergiedatenApiClient:
         # energiedaten.at instance. Unset for every real install.
         self._base_url = os.environ.get(
             "ENERGIEDATEN_API_URL", "https://energiedaten.at/api/v1"
-        )
+        ).rstrip("/")
 
     @property
     def _headers(self) -> dict[str, str]:

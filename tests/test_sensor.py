@@ -192,6 +192,44 @@ def test_native_value_survives_a_poll_without_new_readings(
     assert sensor.extra_state_attributes["last_data_at"] == "2026-03-15T14:30:00+00:00"
 
 
+def test_native_value_takes_the_newest_reading_not_the_last_revised(
+    mock_coordinator, mock_entry, meter_config
+):
+    """A cursor poll lists readings by revision; a late correction can come last."""
+    mock_coordinator.data = {
+        "meter-1": [
+            {"timestamp_end": "2026-03-15T14:30:00+00:00", "value": 0.5, "quality": 1},
+            {"timestamp_end": "2026-02-01T08:00:00+00:00", "value": 9.9, "quality": 1},
+        ]
+    }
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+
+    assert sensor.native_value == 0.5
+    assert sensor.extra_state_attributes["last_data_at"] == "2026-03-15T14:30:00+00:00"
+
+
+def test_late_correction_does_not_replace_a_newer_reading(
+    mock_coordinator, mock_entry, meter_config
+):
+    """A poll that delivers only a revision of an old day keeps the newer value."""
+    mock_coordinator.data = {
+        "meter-1": [
+            {"timestamp_end": "2026-03-15T14:30:00+00:00", "value": 0.5, "quality": 2},
+        ]
+    }
+    sensor = EnergiedatenSensor(mock_coordinator, mock_entry, meter_config, None)
+    assert sensor.native_value == 0.5
+
+    mock_coordinator.data = {
+        "meter-1": [
+            {"timestamp_end": "2026-02-01T08:00:00+00:00", "value": 9.9, "quality": 1},
+        ]
+    }
+
+    assert sensor.native_value == 0.5
+    assert sensor.extra_state_attributes["data_quality"] == "estimated"
+
+
 async def test_sensor_restores_last_reading_after_restart(
     hass: HomeAssistant, mock_recorder_before_hass, mock_config_entry
 ) -> None:
@@ -229,6 +267,25 @@ async def test_sensor_restores_last_reading_after_restart(
     assert state.state == "0.42"
     assert state.attributes["data_quality"] == "measured"
     assert state.attributes["last_data_at"] == "2026-03-15T14:30:00+00:00"
+
+    coordinator = mock_config_entry.runtime_data.coordinator
+    coordinator.async_set_updated_data(
+        {
+            "meter-1": [
+                {
+                    "timestamp_end": "2026-03-16T00:00:00+00:00",
+                    "value": 0.7,
+                    "obis_code": "1-1:1.9.0 G.01",
+                    "quality": 2,
+                }
+            ]
+        }
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.wohnung_consumption_measured")
+    assert state.state == "0.7"
+    assert state.attributes["data_quality"] == "estimated"
 
 
 def test_native_value_filters_by_obis_code(mock_coordinator, mock_entry, meter_config):
