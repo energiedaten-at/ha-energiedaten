@@ -42,7 +42,7 @@ def mock_session() -> AsyncMock:
 @pytest.fixture
 def client(mock_session: AsyncMock) -> EnergiedatenApiClient:
     """Create an API client with mocked session."""
-    return EnergiedatenApiClient(mock_session, "test-token")
+    return EnergiedatenApiClient(mock_session, "test-token", "0.7.0")
 
 
 # --- async_validate ---
@@ -59,6 +59,19 @@ async def test_validate_sends_authenticated_request_to_canonical_url(
     call = mock_session.get.call_args
     assert call.args[0] == "https://energiedaten.at/api/v1/smart-meters"
     assert call.kwargs["headers"]["Authorization"] == "Bearer test-token"
+
+
+async def test_requests_identify_the_integration_after_home_assistant(
+    client, mock_session
+):
+    """The API tells this integration apart from other HA components by its token."""
+    mock_session.get.return_value = _mock_response(200, {"data": []})
+
+    await client.async_validate()
+
+    user_agent = mock_session.get.call_args.kwargs["headers"]["User-Agent"]
+    assert user_agent.startswith("HomeAssistant/")
+    assert user_agent.endswith(" ha-energiedaten/0.7.0")
 
 
 @pytest.mark.parametrize("status", [401, 403, 404])

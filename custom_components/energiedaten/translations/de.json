@@ -7,7 +7,7 @@
           "token": "API-Key"
         },
         "data_description": {
-          "token": "API-Key erstellen unter energiedaten.at → Einstellungen → API-Keys (Berechtigungen: meters:read, data:read). Keys laufen ab — Community-Plan maximal 365 Tage; vor Ablauf erneut authentifizieren."
+          "token": "API-Key erstellen unter energiedaten.at → Daten → API-Schlüssel (Berechtigungen: smart-meters:read, data:read). Keys laufen ab — Community-Plan maximal 365 Tage; vor Ablauf erneut authentifizieren."
         }
       },
       "meters": {

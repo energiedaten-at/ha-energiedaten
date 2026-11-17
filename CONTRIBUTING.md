@@ -30,6 +30,13 @@ We welcome PRs! Here's how to get started:
    pytest
    ```
 
+### Testing against a local energiedaten.at
+
+Set `ENERGIEDATEN_API_URL` to point a local Home Assistant at a local
+energiedaten.at instance instead of production, e.g.
+`http://host.docker.internal:8090/api/v1` for a Sail app on port 8090. Create
+the API key in the local app; no production key is involved.
+
 ### Guidelines
 
 - **Keep changes focused.** One fix or feature per PR.

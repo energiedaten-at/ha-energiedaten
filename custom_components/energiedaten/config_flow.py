@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.loader import async_get_integration
 
 from .api import AuthenticationError, EnergiedatenApiClient
 from .const import (
@@ -68,10 +69,12 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the options flow handler."""
         return EnergiedatenOptionsFlow()
 
-    def _create_client(self, token: str) -> EnergiedatenApiClient:
+    async def _create_client(self, token: str) -> EnergiedatenApiClient:
         """Create an API client using HA's shared aiohttp session."""
-        session = async_get_clientsession(self.hass)
-        return EnergiedatenApiClient(session, token)
+        integration = await async_get_integration(self.hass, DOMAIN)
+        return EnergiedatenApiClient(
+            async_get_clientsession(self.hass), token, str(integration.version)
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -81,7 +84,7 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._token = user_input[CONF_TOKEN]
-            client = self._create_client(self._token)
+            client = await self._create_client(self._token)
 
             try:
                 await client.async_validate()
@@ -202,7 +205,7 @@ class EnergiedatenConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            client = self._create_client(user_input[CONF_TOKEN])
+            client = await self._create_client(user_input[CONF_TOKEN])
             try:
                 await client.async_validate()
             except AuthenticationError:

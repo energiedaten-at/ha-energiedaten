@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -105,6 +107,13 @@ async def test_setup_registers_account_device_with_meters_beneath_it(
 
     # The payoff: the button is no longer squatting on the global `button.refresh`
     assert hass.states.get("button.energiedaten_at_refresh") is not None
+
+    # The API identifies installs by this token, so it must carry the shipped version.
+    manifest = json.loads(
+        (Path(__file__).parents[1] / "custom_components/energiedaten/manifest.json").read_text()
+    )
+    user_agent = entry.runtime_data.coordinator.client._headers["User-Agent"]
+    assert user_agent.endswith(f" ha-energiedaten/{manifest['version']}")
 
 
 async def test_reimport_service_clears_cursors(
