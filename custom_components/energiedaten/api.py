@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
+import os
 from typing import Any
 
 import aiohttp
@@ -56,7 +57,11 @@ class EnergiedatenApiClient:
         # Keep Home Assistant's own token in front so the API can tell this
         # integration apart from other Home Assistant components.
         self._user_agent = f"{SERVER_SOFTWARE} ha-energiedaten/{version}"
-        self._base_url = "https://energiedaten.at/api/v1"
+        # Development only: lets a local Home Assistant talk to a local
+        # energiedaten.at instance. Unset for every real install.
+        self._base_url = os.environ.get(
+            "ENERGIEDATEN_API_URL", "https://energiedaten.at/api/v1"
+        )
 
     @property
     def _headers(self) -> dict[str, str]:

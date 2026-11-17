@@ -27,6 +27,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Sensors no longer turn `unknown` after **Refresh** or a Home Assistant
+  restart. A sensor showed only the readings of the latest poll, and data
+  arrives once a day, so most polls returned nothing and blanked it until the
+  next delivery or an `energiedaten.reimport`. Sensors now keep their last
+  reading until a newer one arrives and restore it after a restart. The first
+  restart after updating still shows `unknown` until the next delivery,
+  because older versions saved nothing to restore. Statistics and the Energy
+  Dashboard were not affected.
+
 - Renaming a sensor's entity ID no longer makes it disappear until the entry
   is reloaded. Meter devices were linked to the account device through the
   deprecated `via_device` parameter, which HA 2026.9+ warns about on every

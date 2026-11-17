@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorDeviceClass,
+)
 from homeassistant.const import (
     MAJOR_VERSION,
     MINOR_VERSION,
@@ -164,7 +167,7 @@ async def async_setup_entry(
 
 class EnergiedatenSensor(
     CoordinatorEntity[EnergiedatenCoordinator],
-    SensorEntity,
+    RestoreSensor,
 ):
     """Energy sensor for a single meter/Zählpunkt + OBIS code."""
 
@@ -221,14 +224,26 @@ class EnergiedatenSensor(
         }
         if obis_code:
             self._attr_extra_state_attributes["obis_code"] = obis_code
+        # The latest reading seen. Data arrives once a day, so most polls and
+        # every restart return nothing new; the sensor keeps this value until
+        # a newer reading replaces it.
+        self._last_value: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last reading from before a restart."""
+        await super().async_added_to_hass()
+        if (data := await self.async_get_last_sensor_data()) is None:
+            return
+        self._last_value = data.native_value
+        if (state := await self.async_get_last_state()) is not None:
+            for key in ("data_quality", "last_data_at"):
+                if key in state.attributes:
+                    self._attr_extra_state_attributes[key] = state.attributes[key]
 
     @property
     def native_value(self) -> float | None:
-        """Return the latest reading value from coordinator data."""
+        """Return the latest reading value, kept across empty polls."""
         all_readings = (self.coordinator.data or {}).get(self._meter_uuid, [])
-        if not all_readings:
-            return None
-
         if self._obis_code:
             readings = [
                 r for r in all_readings if r.get("obis_code") == self._obis_code
@@ -236,14 +251,14 @@ class EnergiedatenSensor(
         else:
             readings = all_readings
 
-        if not readings:
-            return None
+        if readings:
+            last = readings[-1]
+            self._attr_extra_state_attributes["data_quality"] = _quality_label(
+                last.get("quality", "unknown")
+            )
+            self._attr_extra_state_attributes["last_data_at"] = last.get(
+                "timestamp_end"
+            )
+            self._last_value = float(last["value"])
 
-        last = readings[-1]
-        # Update dynamic attributes from latest reading
-        self._attr_extra_state_attributes["data_quality"] = _quality_label(
-            last.get("quality", "unknown")
-        )
-        self._attr_extra_state_attributes["last_data_at"] = last.get("timestamp_end")
-
-        return float(last["value"])
+        return self._last_value
