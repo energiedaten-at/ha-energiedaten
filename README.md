@@ -44,7 +44,7 @@ This integration imports your Austrian smart meter energy data from [energiedate
 |---|---|
 | Home Assistant | **2025.12.0** or newer |
 | energiedaten.at account | [Sign up free](https://energiedaten.at), 1 meter included on the Community plan |
-| API key | With `meters:read` and `data:read` scopes ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire; the Community plan caps at 365 days. |
+| API key | With the `smart-meters:read` and `data:read` permissions ([API quickstart](https://energiedaten.at/docs/api#tag/quickstart)). Keys expire; the Community plan caps at 365 days. |
 
 ## Installation
 

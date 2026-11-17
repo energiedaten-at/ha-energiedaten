@@ -9,6 +9,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.loader import async_get_integration
 
 from .api import EnergiedatenApiClient
 from .const import CONF_CURSORS, CONF_TOKEN, DOMAIN
@@ -77,10 +78,11 @@ async def async_setup_entry(
     entry: EnergiedatenConfigEntry,
 ) -> bool:
     """Set up energiedaten.at from a config entry."""
-    session = async_get_clientsession(hass)
+    integration = await async_get_integration(hass, DOMAIN)
     client = EnergiedatenApiClient(
-        session=session,
+        session=async_get_clientsession(hass),
         token=entry.data[CONF_TOKEN],
+        version=str(integration.version),
     )
 
     coordinator = EnergiedatenCoordinator(hass, entry, client)

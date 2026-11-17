@@ -15,6 +15,16 @@ All notable changes to this project will be documented in this file.
   once. Meters outside an energy community read 0, which is why the option is
   off by default.
 
+### Changed
+
+- Requests now identify the integration and its version in the User-Agent
+  (`ha-energiedaten/<version>` after Home Assistant's own token), so
+  energiedaten.at can tell outdated installs apart from other Home Assistant
+  components. ([#7](https://github.com/energiedaten-at/ha-energiedaten/issues/7))
+- The API key hint in the setup dialog names the current permissions
+  (`smart-meters:read`, `data:read`) and where to create the key
+  (**Data → API Keys**).
+
 ### Fixed
 
 - Renaming a sensor's entity ID no longer makes it disappear until the entry

@@ -7,7 +7,7 @@
           "token": "API Key"
         },
         "data_description": {
-          "token": "Create an API key at energiedaten.at → Settings → API Keys (scopes: meters:read, data:read). Keys expire — Community plan caps at 365 days; re-authenticate before then."
+          "token": "Create an API key at energiedaten.at → Data → API Keys (permissions: smart-meters:read, data:read). Keys expire — Community plan caps at 365 days; re-authenticate before then."
         }
       },
       "meters": {

@@ -9,6 +9,8 @@ from typing import Any
 
 import aiohttp
 
+from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -47,9 +49,13 @@ class EnergiedatenApiClient:
         self,
         session: aiohttp.ClientSession,
         token: str,
+        version: str,
     ) -> None:
         self._session = session
         self._token = token
+        # Keep Home Assistant's own token in front so the API can tell this
+        # integration apart from other Home Assistant components.
+        self._user_agent = f"{SERVER_SOFTWARE} ha-energiedaten/{version}"
         self._base_url = "https://energiedaten.at/api/v1"
 
     @property
@@ -57,6 +63,7 @@ class EnergiedatenApiClient:
         return {
             "Authorization": f"Bearer {self._token}",
             "Accept": "application/json",
+            "User-Agent": self._user_agent,
         }
 
     async def _get(
